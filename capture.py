@@ -222,7 +222,7 @@ class ScreenCaptureApp:
         toolbar.pack(fill="x", side="top")
 
         lbl_info = tk.Label(
-            toolbar, text=f" Moon's Capture ({w} x {h} px) - [Enter] to Capture",
+            toolbar, text=f" Moon's Capture ({w} x {h} px)",
             bg="#1e293b", fg="white", font=("Segoe UI", 9, "bold")
         )
         lbl_info.pack(side="left", padx=10, pady=6)
