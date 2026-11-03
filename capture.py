@@ -73,7 +73,7 @@ def copy_to_clipboard(image):
 class ScreenCaptureApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Screen Capture Tool (4K Upscale)")
+        self.root.title("Moon's Capture")
         self.root.geometry("500x440")
         self.root.minsize(460, 400)
         self.root.resizable(True, True)
