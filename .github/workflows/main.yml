@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Windows EXE (Optimized)
 
 on:
   push:
@@ -18,10 +18,11 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install dependencies
+    - name: Install dependencies & UPX
       run: |
         python -m pip install --upgrade pip
         pip install Pillow pyinstaller
+        choco install upx -y
 
     - name: Generate Moon Icon File
       shell: bash
@@ -38,9 +39,27 @@ jobs:
         draw.ellipse((175, 115, 215, 155), fill='#F0C419')
         img.save('moon.ico', format='ICO', sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])"
 
-    - name: Build EXE with PyInstaller
+    - name: Build Lightweight EXE
+      shell: pwsh
       run: |
-        pyinstaller -w -F --icon=moon.ico -n "Moon's Capture" capture.py
+        $buildArgs = @(
+          "-w",
+          "-F",
+          "--icon=moon.ico",
+          "-n", "Moon's Capture",
+          "--exclude-module", "unittest",
+          "--exclude-module", "email",
+          "--exclude-module", "http",
+          "--exclude-module", "xml",
+          "--exclude-module", "pydoc",
+          "--exclude-module", "sqlite3",
+          "--exclude-module", "ssl",
+          "--exclude-module", "bz2",
+          "--exclude-module", "lzma",
+          "--exclude-module", "tkinter.test",
+          "capture.py"
+        )
+        pyinstaller @buildArgs
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
