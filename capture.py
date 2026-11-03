@@ -99,7 +99,7 @@ class ScreenCaptureApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Moon's Capture")
-        self.root.geometry("520x510")
+        self.root.geometry("520x500")
         self.root.minsize(480, 500)
         self.root.resizable(True, True)
 
@@ -113,6 +113,9 @@ class ScreenCaptureApp:
             print(f"Icon setup warning: {e}")
 
         self.last_captured_image = None
+
+        # Bind Global Hotkeys (1, 2, 3)
+        self.root.bind("<Key>", self.handle_hotkey)
 
         # --- Section 1: Frame Settings ---
         lbl_frame = tk.LabelFrame(
@@ -135,7 +138,7 @@ class ScreenCaptureApp:
         self.entry_h.grid(row=0, column=3, padx=6, pady=4)
 
         self.btn_spawn_frame = tk.Button(
-            lbl_frame, text="Create Moveable/Resizable Frame", bg="#2563eb", fg="white",
+            lbl_frame, text="Create Moveable/Resizable Frame  [ 1 ]", bg="#2563eb", fg="white",
             font=("Segoe UI", 9, "bold"), relief="flat", pady=6, cursor="hand2",
             command=self.open_moveable_frame
         )
@@ -149,7 +152,7 @@ class ScreenCaptureApp:
         lbl_drag.pack(fill="x", padx=15, pady=6)
 
         self.btn_drag = tk.Button(
-            lbl_drag, text="Drag to Select Area", font=("Segoe UI", 9),
+            lbl_drag, text="Drag to Select Area  [ 2 ]", font=("Segoe UI", 9),
             relief="groove", pady=6, cursor="hand2", command=self.start_drag_capture
         )
         self.btn_drag.pack(fill="x")
@@ -159,7 +162,7 @@ class ScreenCaptureApp:
             root, text=" 3. Resolution & Save ",
             font=("Segoe UI", 9, "bold"), padx=15, pady=8
         )
-        lbl_output.pack(fill="x", padx=15, pady=6)
+        lbl_output.pack(fill="x", padx=15, pady=8)
 
         self.var_upscale = tk.BooleanVar(value=True)
         chk_upscale = tk.Checkbutton(
@@ -168,15 +171,30 @@ class ScreenCaptureApp:
         )
         chk_upscale.pack(anchor="w", pady=(2, 6))
 
-        self.lbl_status = tk.Label(lbl_output, text="Status: Ready", font=("Segoe UI", 9), fg="#4b5563")
+        self.lbl_status = tk.Label(lbl_output, text="Status: Ready  (Hotkeys: 1=Frame, 2=Drag, 3=Save)", font=("Segoe UI", 9), fg="#4b5563")
         self.lbl_status.pack(anchor="w", pady=(0, 6))
 
         self.btn_save = tk.Button(
-            lbl_output, text="Save as PNG...", state="disabled",
+            lbl_output, text="Save as PNG...  [ 3 ]", state="disabled",
             bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
             relief="flat", pady=7, cursor="hand2", command=self.save_as_png
         )
         self.btn_save.pack(fill="x", pady=(2, 4))
+
+    def handle_hotkey(self, event):
+        # Do not intercept hotkeys if typing in Width or Height entry boxes
+        if isinstance(event.widget, tk.Entry):
+            return
+
+        if event.char == "1" or event.keysym in ("1", "KP_1"):
+            self.open_moveable_frame()
+        elif event.char == "2" or event.keysym in ("2", "KP_2"):
+            self.start_drag_capture()
+        elif event.char == "3" or event.keysym in ("3", "KP_3"):
+            if self.btn_save["state"] == "normal":
+                self.save_as_png()
+            else:
+                self.lbl_status.config(text="Status: Please capture an image first before saving [3]!", fg="#d97706")
 
     def open_moveable_frame(self):
         try:
@@ -188,7 +206,6 @@ class ScreenCaptureApp:
             messagebox.showerror("Invalid Input", "Please enter positive numbers greater than 40.")
             return
 
-        # Close existing frame if already open
         if self.current_frame_win and self.current_frame_win.winfo_exists():
             self.current_frame_win.destroy()
 
@@ -205,7 +222,7 @@ class ScreenCaptureApp:
         toolbar.pack(fill="x", side="top")
 
         lbl_info = tk.Label(
-            toolbar, text=f" Moon's Capture ({w} x {h} px)",
+            toolbar, text=f" Moon's Capture ({w} x {h} px) - [Enter] to Capture",
             bg="#1e293b", fg="white", font=("Segoe UI", 9, "bold")
         )
         lbl_info.pack(side="left", padx=10, pady=6)
@@ -224,7 +241,6 @@ class ScreenCaptureApp:
                 try:
                     self.process_capture(cx, cy, cx + cw, cy + ch)
                 finally:
-                    # Restore frame window right after capture without closing
                     if frame_win.winfo_exists():
                         frame_win.deiconify()
                         frame_win.lift()
@@ -244,6 +260,11 @@ class ScreenCaptureApp:
             cursor="hand2", command=do_capture
         )
         btn_capture.pack(side="right", padx=4, pady=4)
+
+        # Bind Enter and Spacebar to capture while frame is active
+        frame_win.bind("<Return>", lambda e: do_capture())
+        frame_win.bind("<space>", lambda e: do_capture())
+        frame_win.bind("<Escape>", lambda e: frame_win.destroy())
 
         # Toolbar Drag Logic
         def start_move(event):
@@ -288,7 +309,7 @@ class ScreenCaptureApp:
             canvas.coords("grip", new_w - grip_size, new_h - grip_size, new_w - 1, new_h - 1)
             canvas.coords("grip_text", new_w - 8, new_h - 8)
 
-            lbl_info.config(text=f" Moon's Capture ({new_w} x {new_h} px)")
+            lbl_info.config(text=f" Moon's Capture ({new_w} x {new_h} px) - [Enter] to Capture")
             self.entry_w.delete(0, tk.END)
             self.entry_w.insert(0, str(new_w))
             self.entry_h.delete(0, tk.END)
@@ -394,7 +415,7 @@ class ScreenCaptureApp:
             final_w, final_h = img.size
             upscale_text = f" -> 4K Enhanced {final_w}x{final_h} px" if is_upscaled else ""
             status_msg = f"Captured ({orig_w}x{orig_h}{upscale_text}) - "
-            status_msg += "Copied to Clipboard!" if clipboard_ok else "Ready to save!"
+            status_msg += "Copied to Clipboard! (Press [3] to Save)" if clipboard_ok else "Ready to save! (Press [3])"
 
             self.lbl_status.config(text=status_msg, fg="#16a34a" if clipboard_ok else "#d97706")
             self.btn_save.config(state="normal")
