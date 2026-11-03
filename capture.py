@@ -176,4 +176,206 @@ class ScreenCaptureApp:
             frame_win.update_idletasks()
             cx = canvas.winfo_rootx()
             cy = canvas.winfo_rooty()
-            cw = canvas.
+            cw = canvas.winfo_width()
+            ch = canvas.winfo_height()
+            frame_win.destroy()
+            self.root.after(180, lambda: self.process_capture(cx, cy, cx + cw, cy + ch))
+
+        btn_close = tk.Button(
+            toolbar, text=" X ", bg="#ef4444", fg="white",
+            relief="flat", font=("Segoe UI", 9, "bold"), padx=8, pady=2,
+            cursor="hand2", command=frame_win.destroy
+        )
+        btn_close.pack(side="right", padx=6, pady=4)
+
+        btn_capture = tk.Button(
+            toolbar, text=" Capture ", bg="#10b981", fg="white",
+            relief="flat", font=("Segoe UI", 9, "bold"), padx=12, pady=2,
+            cursor="hand2", command=do_capture
+        )
+        btn_capture.pack(side="right", padx=4, pady=4)
+
+        # Toolbar Drag to Move Window
+        def start_move(event):
+            frame_win.drag_start_x = event.x_root
+            frame_win.drag_start_y = event.y_root
+            frame_win.win_x = frame_win.winfo_x()
+            frame_win.win_y = frame_win.winfo_y()
+
+        def do_move(event):
+            dx = event.x_root - frame_win.drag_start_x
+            dy = event.y_root - frame_win.drag_start_y
+            frame_win.geometry(f"+{frame_win.win_x + dx}+{frame_win.win_y + dy}")
+
+        toolbar.bind("<ButtonPress-1>", start_move)
+        toolbar.bind("<B1-Motion>", do_move)
+        lbl_info.bind("<ButtonPress-1>", start_move)
+        lbl_info.bind("<B1-Motion>", do_move)
+
+        # 2. Transparent Hollow Canvas
+        canvas = tk.Canvas(frame_win, width=w, height=h, bg=transparent_color, highlightthickness=0)
+        canvas.pack(side="top")
+
+        # Red Border & Bottom-Right Resize Handle
+        canvas.create_rectangle(1, 1, w - 2, h - 2, outline="#ef4444", width=2, tags="border")
+        grip_size = 16
+        canvas.create_rectangle(w - grip_size, h - grip_size, w - 1, h - 1, fill="#ef4444", outline="white", tags="grip")
+        canvas.create_text(w - 8, h - 8, text="⇲", fill="white", font=("Segoe UI", 8, "bold"), tags="grip_text")
+
+        # Resize Handle Logic
+        def start_resize(event):
+            frame_win.resize_start_x = event.x_root
+            frame_win.resize_start_y = event.y_root
+            frame_win.initial_w = canvas.winfo_width()
+            frame_win.initial_h = canvas.winfo_height()
+
+        def do_resize(event):
+            dx = event.x_root - frame_win.resize_start_x
+            dy = event.y_root - frame_win.resize_start_y
+            new_w = max(80, frame_win.initial_w + dx)
+            new_h = max(50, frame_win.initial_h + dy)
+
+            # Update Canvas Geometry
+            canvas.config(width=new_w, height=new_h)
+            canvas.coords("border", 1, 1, new_w - 2, new_h - 2)
+            canvas.coords("grip", new_w - grip_size, new_h - grip_size, new_w - 1, new_h - 1)
+            canvas.coords("grip_text", new_w - 8, new_h - 8)
+
+            # Update Labels & Input fields in Real Time
+            lbl_info.config(text=f" Move Toolbar ({new_w} x {new_h} px)")
+            self.entry_w.delete(0, tk.END)
+            self.entry_w.insert(0, str(new_w))
+            self.entry_h.delete(0, tk.END)
+            self.entry_h.insert(0, str(new_h))
+
+        for tag in ("grip", "grip_text"):
+            canvas.tag_bind(tag, "<ButtonPress-1>", start_resize)
+            canvas.tag_bind(tag, "<B1-Motion>", do_resize)
+            canvas.tag_bind(tag, "<Enter>", lambda e: canvas.config(cursor="size_nw_se"))
+            canvas.tag_bind(tag, "<Leave>", lambda e: canvas.config(cursor=""))
+
+        # Center frame on screen
+        frame_win.update_idletasks()
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        pos_x = max(20, (screen_w - frame_win.winfo_reqwidth()) // 2)
+        pos_y = max(20, (screen_h - frame_win.winfo_reqheight()) // 2)
+        frame_win.geometry(f"+{pos_x}+{pos_y}")
+
+    def start_drag_capture(self):
+        self.root.withdraw()
+
+        overlay = tk.Toplevel(self.root)
+        overlay.attributes('-fullscreen', True)
+        overlay.attributes('-alpha', 0.3)
+        overlay.attributes('-topmost', True)
+
+        canvas = tk.Canvas(overlay, cursor="cross", bg="gray")
+        canvas.pack(fill="both", expand=True)
+
+        state = {"start_x": 0, "start_y": 0, "rect": None}
+
+        def on_press(event):
+            state["start_x"] = event.x
+            state["start_y"] = event.y
+            state["rect"] = canvas.create_rectangle(
+                event.x, event.y, event.x, event.y,
+                outline="#ef4444", width=2, fill="black"
+            )
+
+        def on_drag(event):
+            canvas.coords(state["rect"], state["start_x"], state["start_y"], event.x, event.y)
+
+        def on_release(event):
+            end_x, end_y = event.x, event.y
+            overlay.destroy()
+
+            x1 = min(state["start_x"], end_x)
+            y1 = min(state["start_y"], end_y)
+            x2 = max(state["start_x"], end_x)
+            y2 = max(state["start_y"], end_y)
+
+            # Sync Dragged size back to input boxes
+            self.entry_w.delete(0, tk.END)
+            self.entry_w.insert(0, str(x2 - x1))
+            self.entry_h.delete(0, tk.END)
+            self.entry_h.insert(0, str(y2 - y1))
+
+            if x2 - x1 > 5 and y2 - y1 > 5:
+                self.root.after(180, lambda: self.process_capture(x1, y1, x2, y2))
+            else:
+                self.root.deiconify()
+
+        canvas.bind("<ButtonPress-1>", on_press)
+        canvas.bind("<B1-Motion>", on_drag)
+        canvas.bind("<ButtonRelease-1>", on_release)
+        overlay.bind("<Escape>", lambda e: (overlay.destroy(), self.root.deiconify()))
+
+    def process_capture(self, x1, y1, x2, y2):
+        self.root.withdraw()
+        time.sleep(0.05)
+
+        try:
+            x1_i = int(round(min(x1, x2)))
+            y1_i = int(round(min(y1, y2)))
+            x2_i = int(round(max(x1, x2)))
+            y2_i = int(round(max(y1, y2)))
+
+            if x2_i <= x1_i or y2_i <= y1_i:
+                return
+
+            try:
+                img = ImageGrab.grab(bbox=(x1_i, y1_i, x2_i, y2_i), all_screens=True)
+            except Exception:
+                img = ImageGrab.grab(bbox=(x1_i, y1_i, x2_i, y2_i))
+
+            orig_w, orig_h = img.size
+
+            # 4K Upscaling (FHD to 4K: 2x resolution with Lanczos Resampling)
+            is_upscaled = self.var_upscale.get()
+            if is_upscaled:
+                target_w = orig_w * 2
+                target_h = orig_h * 2
+                resample_filter = getattr(Image, 'Resampling', Image).LANCZOS
+                img = img.resize((target_w, target_h), resample_filter)
+
+            self.last_captured_image = img
+
+            # 1. Copy to Clipboard
+            clipboard_ok = copy_to_clipboard(img)
+
+            # 2. Update Status
+            final_w, final_h = img.size
+            upscale_text = f" -> 4K {final_w}x{final_h} px" if is_upscaled else ""
+            status_msg = f"Captured ({orig_w}x{orig_h}{upscale_text}) - "
+            status_msg += "Copied to Clipboard!" if clipboard_ok else "Ready to save!"
+
+            self.lbl_status.config(text=status_msg, fg="#16a34a" if clipboard_ok else "#d97706")
+            self.btn_save.config(state="normal")
+        except Exception as e:
+            messagebox.showerror("Capture Error", f"Failed to capture screen:\n{str(e)}")
+        finally:
+            self.root.deiconify()
+
+    def save_as_png(self):
+        if not self.last_captured_image:
+            return
+
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            filetypes=[("PNG Image", "*.png")],
+            title="Save Captured Image As"
+        )
+        if filepath:
+            try:
+                self.last_captured_image.save(filepath, "PNG")
+                messagebox.showinfo("Saved", f"Image saved successfully!\n{filepath}")
+                self.lbl_status.config(text="Saved to PNG successfully.", fg="#2563eb")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save file:\n{str(e)}")
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ScreenCaptureApp(root)
+    root.mainloop()
