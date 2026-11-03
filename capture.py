@@ -74,7 +74,7 @@ class ScreenCaptureApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Moon's Capture")
-        self.root.geometry("500x440")
+        self.root.geometry("500x520")
         self.root.minsize(460, 400)
         self.root.resizable(True, True)
 
