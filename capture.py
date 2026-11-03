@@ -279,9 +279,12 @@ class ScreenCaptureApp:
         canvas.create_image(init_x1, init_y1, image=self.inside_photo, anchor="nw", tags="inside_img")
 
         # 3. Red Border (Width: 4px)
+        border_width = 4
+        half_bw = border_width // 2  # 2px outline offset
+
         canvas.create_rectangle(
             box["x1"], box["y1"], box["x2"], box["y2"],
-            outline="#ef4444", width=4, tags="frame_box"
+            outline="#ef4444", width=border_width, tags="frame_box"
         )
 
         toolbar = tk.Frame(frame_win, bg="#1e293b")
@@ -325,10 +328,15 @@ class ScreenCaptureApp:
         btn_capture.pack(side="right", padx=4, pady=4)
 
         tb_height = 36
+
+        # Perfectly match toolbar width and X position with the outer red line
         def update_toolbar_pos():
             cur_w = box["x2"] - box["x1"]
-            pos_y = box["y1"] - tb_height if (box["y1"] - tb_height >= 0) else box["y2"]
-            toolbar.place(x=box["x1"], y=pos_y, width=max(260, cur_w), height=tb_height)
+            outer_w = cur_w + border_width
+            actual_w = max(260, outer_w)
+            pos_x = box["x1"] - half_bw
+            pos_y = (box["y1"] - tb_height - half_bw) if (box["y1"] - tb_height - half_bw >= 0) else (box["y2"] + half_bw)
+            toolbar.place(x=pos_x, y=pos_y, width=actual_w, height=tb_height)
 
         def update_frame_visuals():
             canvas.coords("frame_box", box["x1"], box["y1"], box["x2"], box["y2"])
@@ -384,7 +392,7 @@ class ScreenCaptureApp:
             if abs(x - x1) <= margin and (y1 - margin <= y <= y2 + margin): return "resize_w", "size_we"
             if abs(x - x2) <= margin and (y1 - margin <= y <= y2 + margin): return "resize_e", "size_we"
 
-            # 3. Inside Frame Body (Move!)
+            # 3. Inside Frame Body (Move)
             if x1 < x < x2 and y1 < y < y2:
                 return "move", "fleur"
 
@@ -423,7 +431,7 @@ class ScreenCaptureApp:
             init_x2 = drag_data["init_x2"]
             init_y2 = drag_data["init_y2"]
 
-            # A. Inside Frame Drag -> Move Frame
+            # Inside Frame Drag -> Move Frame
             if mode == "move":
                 cur_w = init_x2 - init_x1
                 cur_h = init_y2 - init_y1
@@ -434,7 +442,7 @@ class ScreenCaptureApp:
                 update_frame_visuals()
                 return
 
-            # B. Edge/Corner Drag -> Resize Frame
+            # Edge/Corner Drag -> Resize Frame
             min_w, min_h = 60, 40
             new_x1, new_x2 = init_x1, init_x2
             new_y1, new_y2 = init_y1, init_y2
@@ -541,7 +549,7 @@ class ScreenCaptureApp:
                 event.x, event.y, event.x, event.y,
                 outline="#ef4444", width=3, tags="drag_box"
             )
-            # Dimension badge (dark background + white text)
+            # Dimension badge
             state["dim_bg"] = canvas.create_rectangle(0, 0, 0, 0, fill="#1e293b", outline="#ef4444", width=1, tags="dim_tag")
             state["dim_text"] = canvas.create_text(0, 0, text="", fill="white", font=("Segoe UI", 9, "bold"), anchor="nw", tags="dim_tag")
 
@@ -576,7 +584,6 @@ class ScreenCaptureApp:
 
             canvas.coords(state["rect"], x1, y1, x2, y2)
 
-            # Auto-fitting Dimension Badge (dynamically calculates text bounds)
             tag_text = f"{w} x {h} px"
             tag_y = y1 - 24 if y1 >= 28 else y1 + 8
             tag_x = max(10, x1 + 8)
@@ -584,14 +591,12 @@ class ScreenCaptureApp:
             canvas.itemconfig(state["dim_text"], text=tag_text)
             canvas.coords(state["dim_text"], tag_x, tag_y)
 
-            # Calculate actual text bounding box and resize background rectangle with padding
             bbox = canvas.bbox(state["dim_text"])
             if bbox:
                 pad_x = 8
                 pad_y = 3
                 canvas.coords(state["dim_bg"], bbox[0] - pad_x, bbox[1] - pad_y, bbox[2] + pad_x, bbox[3] + pad_y)
 
-            # Ensure tags always float above selection area
             canvas.tag_raise(state["dim_bg"])
             canvas.tag_raise(state["dim_text"])
 
