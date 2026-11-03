@@ -182,7 +182,6 @@ class ScreenCaptureApp:
         self.btn_save.pack(fill="x", pady=(2, 4))
 
     def handle_hotkey(self, event):
-        # Do not intercept hotkeys if typing in Width or Height entry boxes
         if isinstance(event.widget, tk.Entry):
             return
 
@@ -222,7 +221,7 @@ class ScreenCaptureApp:
         toolbar.pack(fill="x", side="top")
 
         lbl_info = tk.Label(
-            toolbar, text=f" Moon's Capture ({w} x {h} px)",
+            toolbar, text=f" Moon's Capture ({w} x {h} px) - [Enter] to Capture",
             bg="#1e293b", fg="white", font=("Segoe UI", 9, "bold")
         )
         lbl_info.pack(side="left", padx=10, pady=6)
@@ -234,7 +233,6 @@ class ScreenCaptureApp:
             cw = canvas.winfo_width()
             ch = canvas.winfo_height()
 
-            # Temporarily hide frame for 120ms to avoid capturing its own red border/toolbar
             frame_win.withdraw()
 
             def capture_and_restore():
@@ -261,12 +259,11 @@ class ScreenCaptureApp:
         )
         btn_capture.pack(side="right", padx=4, pady=4)
 
-        # Bind Enter and Spacebar to capture while frame is active
         frame_win.bind("<Return>", lambda e: do_capture())
         frame_win.bind("<space>", lambda e: do_capture())
         frame_win.bind("<Escape>", lambda e: frame_win.destroy())
 
-        # Toolbar Drag Logic
+        # Toolbar Drag Logic (Window Move)
         def start_move(event):
             frame_win.drag_start_x = event.x_root
             frame_win.drag_start_y = event.y_root
@@ -287,38 +284,128 @@ class ScreenCaptureApp:
         canvas = tk.Canvas(frame_win, width=w, height=h, bg=transparent_color, highlightthickness=0)
         canvas.pack(side="top")
 
+        # Main Red Outline Border
         canvas.create_rectangle(1, 1, w - 2, h - 2, outline="#ef4444", width=2, tags="border")
-        grip_size = 16
-        canvas.create_rectangle(w - grip_size, h - grip_size, w - 1, h - 1, fill="#ef4444", outline="white", tags="grip")
-        canvas.create_text(w - 8, h - 8, text="⇲", fill="white", font=("Segoe UI", 8, "bold"), tags="grip_text")
 
-        def start_resize(event):
-            frame_win.resize_start_x = event.x_root
-            frame_win.resize_start_y = event.y_root
-            frame_win.initial_w = canvas.winfo_width()
-            frame_win.initial_h = canvas.winfo_height()
+        # 4 Edge Lines (Thicker hit-area for horizontal & vertical resizing)
+        c_size = 12
+        canvas.create_line(c_size, 1, w - c_size, 1, width=4, fill="#ef4444", tags="edge_n")
+        canvas.create_line(c_size, h - 2, w - c_size, h - 2, width=4, fill="#ef4444", tags="edge_s")
+        canvas.create_line(1, c_size, 1, h - c_size, width=4, fill="#ef4444", tags="edge_w")
+        canvas.create_line(w - 2, c_size, w - 2, h - c_size, width=4, fill="#ef4444", tags="edge_e")
+
+        # 4 Corner Handles (Clean solid accents matching the red border)
+        canvas.create_rectangle(1, 1, c_size, c_size, fill="#ef4444", outline="#ef4444", tags="corner_nw")
+        canvas.create_rectangle(w - c_size, 1, w - 1, c_size, fill="#ef4444", outline="#ef4444", tags="corner_ne")
+        canvas.create_rectangle(1, h - c_size, c_size, h - 1, fill="#ef4444", outline="#ef4444", tags="corner_sw")
+        canvas.create_rectangle(w - c_size, h - c_size, w - 1, h - 1, fill="#ef4444", outline="#ef4444", tags="corner_se")
+
+        # Multi-Direction Resize Engine
+        drag_data = {
+            "start_x": 0, "start_y": 0,
+            "win_x": 0, "win_y": 0,
+            "init_w": 0, "init_h": 0,
+            "mode": None
+        }
+
+        def start_resize(mode, event):
+            drag_data["start_x"] = event.x_root
+            drag_data["start_y"] = event.y_root
+            drag_data["win_x"] = frame_win.winfo_x()
+            drag_data["win_y"] = frame_win.winfo_y()
+            drag_data["init_w"] = canvas.winfo_width()
+            drag_data["init_h"] = canvas.winfo_height()
+            drag_data["mode"] = mode
 
         def do_resize(event):
-            dx = event.x_root - frame_win.resize_start_x
-            dy = event.y_root - frame_win.resize_start_y
-            new_w = max(80, frame_win.initial_w + dx)
-            new_h = max(50, frame_win.initial_h + dy)
+            mode = drag_data["mode"]
+            if not mode:
+                return
 
+            dx = event.x_root - drag_data["start_x"]
+            dy = event.y_root - drag_data["start_y"]
+
+            init_w = drag_data["init_w"]
+            init_h = drag_data["init_h"]
+            init_x = drag_data["win_x"]
+            init_y = drag_data["win_y"]
+
+            new_w = init_w
+            new_h = init_h
+            new_x = init_x
+            new_y = init_y
+
+            min_w = 80
+            min_h = 50
+
+            # Horizontal sizing
+            if "w" in mode:  # nw, sw, w (Left side)
+                raw_w = init_w - dx
+                if raw_w < min_w:
+                    new_w = min_w
+                    new_x = init_x + (init_w - min_w)
+                else:
+                    new_w = raw_w
+                    new_x = init_x + dx
+            elif "e" in mode:  # ne, se, e (Right side)
+                new_w = max(min_w, init_w + dx)
+
+            # Vertical sizing
+            if "n" in mode:  # nw, ne, n (Top side)
+                raw_h = init_h - dy
+                if raw_h < min_h:
+                    new_h = min_h
+                    new_y = init_y + (init_h - min_h)
+                else:
+                    new_h = raw_h
+                    new_y = init_y + dy
+            elif "s" in mode:  # sw, se, s (Bottom side)
+                new_h = max(min_h, init_h + dy)
+
+            # Update Canvas Geometry
             canvas.config(width=new_w, height=new_h)
-            canvas.coords("border", 1, 1, new_w - 2, new_h - 2)
-            canvas.coords("grip", new_w - grip_size, new_h - grip_size, new_w - 1, new_h - 1)
-            canvas.coords("grip_text", new_w - 8, new_h - 8)
+            toolbar.update_idletasks()
+            tb_h = toolbar.winfo_height()
+            if tb_h <= 1:
+                tb_h = 36
+            frame_win.geometry(f"{new_w}x{new_h + tb_h}+{new_x}+{new_y}")
 
+            # Update Border and Grip Coordinates
+            canvas.coords("border", 1, 1, new_w - 2, new_h - 2)
+
+            canvas.coords("edge_n", c_size, 1, new_w - c_size, 1)
+            canvas.coords("edge_s", c_size, new_h - 2, new_w - c_size, new_h - 2)
+            canvas.coords("edge_w", 1, c_size, 1, new_h - c_size)
+            canvas.coords("edge_e", new_w - 2, c_size, new_w - 2, new_h - c_size)
+
+            canvas.coords("corner_nw", 1, 1, c_size, c_size)
+            canvas.coords("corner_ne", new_w - c_size, 1, new_w - 1, c_size)
+            canvas.coords("corner_sw", 1, new_h - c_size, c_size, new_h - 1)
+            canvas.coords("corner_se", new_w - c_size, new_h - c_size, new_w - 1, new_h - 1)
+
+            # Update Labels & Input fields in Real Time
             lbl_info.config(text=f" Moon's Capture ({new_w} x {new_h} px) - [Enter] to Capture")
             self.entry_w.delete(0, tk.END)
             self.entry_w.insert(0, str(new_w))
             self.entry_h.delete(0, tk.END)
             self.entry_h.insert(0, str(new_h))
 
-        for tag in ("grip", "grip_text"):
-            canvas.tag_bind(tag, "<ButtonPress-1>", start_resize)
+        # Bind all 8 handles (4 corners + 4 edges) with appropriate cursors
+        handles = [
+            ("corner_nw", "nw", "size_nw_se"),
+            ("corner_ne", "ne", "size_ne_sw"),
+            ("corner_sw", "sw", "size_ne_sw"),
+            ("corner_se", "se", "size_nw_se"),
+            ("edge_w", "w", "size_we"),
+            ("edge_e", "e", "size_we"),
+            ("edge_s", "s", "size_ns"),
+            ("edge_n", "n", "size_ns"),
+        ]
+
+        for tag, mode, cur in handles:
+            canvas.tag_bind(tag, "<ButtonPress-1>", lambda e, m=mode: start_resize(m, e))
             canvas.tag_bind(tag, "<B1-Motion>", do_resize)
-            canvas.tag_bind(tag, "<Enter>", lambda e: canvas.config(cursor="size_nw_se"))
+            canvas.tag_bind(tag, "<Enter>", lambda e, c=cur: canvas.config(cursor=c))
             canvas.tag_bind(tag, "<Leave>", lambda e: canvas.config(cursor=""))
 
         # Center frame on screen
