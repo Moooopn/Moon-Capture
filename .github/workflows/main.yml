@@ -23,9 +23,24 @@ jobs:
         python -m pip install --upgrade pip
         pip install Pillow pyinstaller
 
+    - name: Generate Moon Icon File
+      shell: bash
+      run: |
+        python -c "from PIL import Image, ImageDraw
+        img = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse((8, 8, 248, 248), fill=(255, 235, 150, 80))
+        draw.ellipse((16, 16, 240, 240), fill='#FDD835', outline='#FBC02D', width=6)
+        draw.ellipse((50, 70, 100, 120), fill='#F0C419')
+        draw.ellipse((140, 50, 180, 90), fill='#F0C419')
+        draw.ellipse((120, 140, 190, 210), fill='#F0C419')
+        draw.ellipse((70, 160, 110, 200), fill='#F0C419')
+        draw.ellipse((175, 115, 215, 155), fill='#F0C419')
+        img.save('moon.ico', format='ICO', sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])"
+
     - name: Build EXE with PyInstaller
       run: |
-        pyinstaller -w -F -n "Moon's Capture" capture.py
+        pyinstaller -w -F --icon=moon.ico -n "Moon's Capture" capture.py
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
