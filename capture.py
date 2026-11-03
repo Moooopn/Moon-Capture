@@ -145,7 +145,7 @@ class ScreenCaptureApp:
         self.entry_h.grid(row=0, column=3, padx=6, pady=3)
 
         self.btn_spawn_frame = tk.Button(
-            lbl_frame, text="Create Moveable/Resizable Frame", bg="#2563eb", fg="white",
+            lbl_frame, text="Create Moveable/Resizable Frame  [ 1 ]", bg="#2563eb", fg="white",
             font=("Segoe UI", 9, "bold"), relief="flat", pady=5, cursor="hand2",
             command=self.open_moveable_frame
         )
@@ -153,13 +153,13 @@ class ScreenCaptureApp:
 
         # --- Section 2: Free Drag Area ---
         lbl_drag = tk.LabelFrame(
-            root, text=" 2. Drag & Select Area ",
+            root, text=" 2. Drag & Select Area (Clear Inside, Frosted Outside) ",
             font=("Segoe UI", 9, "bold"), padx=15, pady=6
         )
         lbl_drag.pack(fill="x", padx=15, pady=5)
 
         self.btn_drag = tk.Button(
-            lbl_drag, text="Drag to Select Area", font=("Segoe UI", 9),
+            lbl_drag, text="Drag to Select Area  [ 2 ]", font=("Segoe UI", 9),
             relief="groove", pady=5, cursor="hand2", command=self.start_drag_capture
         )
         self.btn_drag.pack(fill="x")
@@ -182,7 +182,7 @@ class ScreenCaptureApp:
         self.lbl_status.pack(anchor="w", pady=(0, 4))
 
         self.btn_save = tk.Button(
-            lbl_output, text="Save as PNG...", state="disabled",
+            lbl_output, text="Save as PNG...  [ 3 ]", state="disabled",
             bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
             relief="flat", pady=6, cursor="hand2", command=self.save_as_png
         )
@@ -202,6 +202,28 @@ class ScreenCaptureApp:
             else:
                 self.lbl_status.config(text="Status: Please capture an image first before saving [3]!", fg="#d97706")
 
+    def create_frosted_background(self):
+        """Ultra-fast snapshot & lightweight soft-frosted blur background."""
+        try:
+            full_screen = ImageGrab.grab(all_screens=True)
+        except Exception:
+            full_screen = ImageGrab.grab()
+
+        fw, fh = full_screen.size
+        small_w = max(1, fw // 2)
+        small_h = max(1, fh // 2)
+        small_img = full_screen.resize((small_w, small_h), Image.Resampling.BILINEAR)
+        blurred_small = small_img.filter(ImageFilter.BoxBlur(2))
+        blurred_full = blurred_small.resize((fw, fh), Image.Resampling.BILINEAR)
+        blurred_full = ImageEnhance.Brightness(blurred_full).enhance(0.95)
+
+        if ImageTk:
+            return ImageTk.PhotoImage(blurred_full)
+        else:
+            buf = io.BytesIO()
+            blurred_full.save(buf, format="PNG")
+            return tk.PhotoImage(data=buf.getvalue())
+
     def open_moveable_frame(self):
         try:
             w = int(self.entry_w.get().strip())
@@ -215,21 +237,7 @@ class ScreenCaptureApp:
         self.root.withdraw()
         self.root.update_idletasks()
 
-        # 1. Ultra-fast snapshot & lightweight soft-frosted blur
-        try:
-            full_screen = ImageGrab.grab(all_screens=True)
-        except Exception:
-            full_screen = ImageGrab.grab()
-
-        fw, fh = full_screen.size
-        
-        # Lightweight BoxBlur (clear, translucent, comfortable to see through)
-        small_w = max(1, fw // 2)
-        small_h = max(1, fh // 2)
-        small_img = full_screen.resize((small_w, small_h), Image.Resampling.BILINEAR)
-        blurred_small = small_img.filter(ImageFilter.BoxBlur(2))
-        blurred_full = blurred_small.resize((fw, fh), Image.Resampling.BILINEAR)
-        blurred_full = ImageEnhance.Brightness(blurred_full).enhance(0.95)
+        self.blur_photo = self.create_frosted_background()
 
         if self.current_frame_win and self.current_frame_win.winfo_exists():
             self.current_frame_win.destroy()
@@ -245,13 +253,6 @@ class ScreenCaptureApp:
         canvas = tk.Canvas(frame_win, highlightthickness=0, bg="black")
         canvas.pack(fill="both", expand=True)
 
-        if ImageTk:
-            self.blur_photo = ImageTk.PhotoImage(blurred_full)
-        else:
-            buf = io.BytesIO()
-            blurred_full.save(buf, format="PNG")
-            self.blur_photo = tk.PhotoImage(data=buf.getvalue())
-
         canvas.create_image(0, 0, image=self.blur_photo, anchor="nw")
 
         # Initial frame positioning
@@ -264,7 +265,7 @@ class ScreenCaptureApp:
 
         box = {"x1": init_x1, "y1": init_y1, "x2": init_x2, "y2": init_y2}
 
-        # Clean 4px Red Border
+        # Clean 4px Red Border with transparent hole
         canvas.create_rectangle(
             box["x1"], box["y1"], box["x2"], box["y2"],
             fill=transparent_color, outline="#ef4444", width=4, tags="frame_box"
@@ -294,7 +295,6 @@ class ScreenCaptureApp:
                         frame_win.deiconify()
                         frame_win.lift()
 
-            # Zero-lag quick capture
             self.root.after(30, capture_and_restore)
 
         btn_close = tk.Button(
@@ -319,7 +319,6 @@ class ScreenCaptureApp:
 
         update_toolbar_pos()
 
-        # Keyboard & focus shortcuts
         frame_win.focus_force()
         canvas.focus_set()
         frame_win.bind_all("<Escape>", exit_frame)
@@ -369,17 +368,14 @@ class ScreenCaptureApp:
         def get_resize_mode(x, y):
             x1, y1, x2, y2 = box["x1"], box["y1"], box["x2"], box["y2"]
 
-            # Early box cull for high FPS
             if x < x1 - margin or x > x2 + margin or y < y1 - margin or y > y2 + margin:
                 return None, ""
 
-            # Corners
             if (abs(x - x1) <= corner_threshold) and (abs(y - y1) <= corner_threshold): return "nw", "size_nw_se"
             if (abs(x - x2) <= corner_threshold) and (abs(y - y1) <= corner_threshold): return "ne", "size_ne_sw"
             if (abs(x - x1) <= corner_threshold) and (abs(y - y2) <= corner_threshold): return "sw", "size_ne_sw"
             if (abs(x - x2) <= corner_threshold) and (abs(y - y2) <= corner_threshold): return "se", "size_nw_se"
 
-            # Edges
             if abs(y - y1) <= margin: return "n", "size_ns"
             if abs(y - y2) <= margin: return "s", "size_ns"
             if abs(x - x1) <= margin: return "w", "size_we"
@@ -459,15 +455,27 @@ class ScreenCaptureApp:
         self.root.withdraw()
         self.root.update_idletasks()
 
+        # Create soft frosted background (same as Feature 1)
+        self.blur_photo = self.create_frosted_background()
+
         overlay = tk.Toplevel(self.root)
         overlay.attributes('-fullscreen', True)
-        overlay.attributes('-alpha', 0.25)
         overlay.attributes('-topmost', True)
 
-        canvas = tk.Canvas(overlay, cursor="cross", bg="gray")
+        transparent_color = "#ff00ff"
+        overlay.wm_attributes("-transparentcolor", transparent_color)
+
+        canvas = tk.Canvas(overlay, highlightthickness=0, bg="black", cursor="cross")
         canvas.pack(fill="both", expand=True)
 
-        state = {"start_x": 0, "start_y": 0, "rect": None}
+        # Draw frosted background
+        canvas.create_image(0, 0, image=self.blur_photo, anchor="nw")
+
+        state = {
+            "start_x": 0, "start_y": 0,
+            "rect": None, "dim_text": None, "dim_bg": None,
+            "is_dragging": False
+        }
 
         def cancel_capture(event=None):
             try:
@@ -478,7 +486,6 @@ class ScreenCaptureApp:
             self.root.deiconify()
             self.lbl_status.config(text="Status: Selection cancelled.", fg="#4b5563")
 
-        # Reliable focus & ESC hook
         def set_focus_and_grab():
             overlay.lift()
             overlay.focus_force()
@@ -496,15 +503,50 @@ class ScreenCaptureApp:
         def on_press(event):
             state["start_x"] = event.x
             state["start_y"] = event.y
+            state["is_dragging"] = True
+
+            # Create clean transparent hole (fill=transparent_color) with crisp red border
             state["rect"] = canvas.create_rectangle(
                 event.x, event.y, event.x, event.y,
-                outline="#ef4444", width=2, fill="black"
+                fill=transparent_color, outline="#ef4444", width=3, tags="drag_box"
             )
+            # Dimension badge (dark pill background + white text)
+            state["dim_bg"] = canvas.create_rectangle(0, 0, 0, 0, fill="#1e293b", outline="#ef4444", width=1, tags="dim_tag")
+            state["dim_text"] = canvas.create_text(0, 0, text="", fill="white", font=("Segoe UI", 9, "bold"), tags="dim_tag")
 
         def on_drag(event):
-            canvas.coords(state["rect"], state["start_x"], state["start_y"], event.x, event.y)
+            if not state["is_dragging"]:
+                return
+
+            cur_x, cur_y = event.x, event.y
+            x1 = min(state["start_x"], cur_x)
+            y1 = min(state["start_y"], cur_y)
+            x2 = max(state["start_x"], cur_x)
+            y2 = max(state["start_y"], cur_y)
+
+            canvas.coords(state["rect"], x1, y1, x2, y2)
+
+            w = x2 - x1
+            h = y2 - y1
+
+            # Position dimension badge neatly above selection box
+            tag_y = y1 - 15 if y1 >= 30 else y2 + 15
+            tag_x = x1 + 50
+            canvas.coords(state["dim_text"], tag_x, tag_y)
+            canvas.itemconfig(state["dim_text"], text=f" {w} x {h} px ")
+            canvas.coords(state["dim_bg"], tag_x - 45, tag_y - 10, tag_x + 45, tag_y + 10)
+
+            # Sync real-time dimensions with main UI entries
+            self.entry_w.delete(0, tk.END)
+            self.entry_w.insert(0, str(w))
+            self.entry_h.delete(0, tk.END)
+            self.entry_h.insert(0, str(h))
 
         def on_release(event):
+            if not state["is_dragging"]:
+                return
+            state["is_dragging"] = False
+
             end_x, end_y = event.x, event.y
             try:
                 overlay.grab_release()
@@ -517,11 +559,6 @@ class ScreenCaptureApp:
             x2 = max(state["start_x"], end_x)
             y2 = max(state["start_y"], end_y)
 
-            self.entry_w.delete(0, tk.END)
-            self.entry_w.insert(0, str(x2 - x1))
-            self.entry_h.delete(0, tk.END)
-            self.entry_h.insert(0, str(y2 - y1))
-
             if x2 - x1 > 5 and y2 - y1 > 5:
                 self.root.after(30, lambda: self.process_capture(x1, y1, x2, y2))
             else:
@@ -530,6 +567,7 @@ class ScreenCaptureApp:
         canvas.bind("<ButtonPress-1>", on_press)
         canvas.bind("<B1-Motion>", on_drag)
         canvas.bind("<ButtonRelease-1>", on_release)
+        overlay.bind_all("<ButtonRelease-1>", on_release)
 
     def process_capture(self, x1, y1, x2, y2):
         self.root.withdraw()
