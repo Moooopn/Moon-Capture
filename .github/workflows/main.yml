@@ -25,10 +25,10 @@ jobs:
 
     - name: Build EXE with PyInstaller
       run: |
-        pyinstaller -w -F capture.py
+        pyinstaller -w -F -n "Moon's Capture" capture.py
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ScreenCaptureApp
+        name: "Moon's Capture"
         path: dist/*.exe
