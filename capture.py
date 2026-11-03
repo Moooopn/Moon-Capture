@@ -36,7 +36,6 @@ def create_moon_icon():
     draw.ellipse((18, 40, 27, 49), fill=crater_color)
     draw.ellipse((44, 28, 52, 36), fill=crater_color)
 
-    # Convert to Tkinter-compatible PhotoImage using in-memory PNG buffer
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return tk.PhotoImage(data=buf.getvalue())
@@ -99,12 +98,14 @@ def copy_to_clipboard(image):
 class ScreenCaptureApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Moon s' Capture")
+        self.root.title("Moon's Capture")
         self.root.geometry("520x540")
         self.root.minsize(480, 500)
         self.root.resizable(True, True)
 
-        # Set Full Moon Icon for Titlebar & Taskbar
+        self.current_frame_win = None
+
+        # Set Moon Icon
         try:
             self.moon_icon = create_moon_icon()
             self.root.iconphoto(True, self.moon_icon)
@@ -187,7 +188,12 @@ class ScreenCaptureApp:
             messagebox.showerror("Invalid Input", "Please enter positive numbers greater than 40.")
             return
 
+        # Close existing frame if already open
+        if self.current_frame_win and self.current_frame_win.winfo_exists():
+            self.current_frame_win.destroy()
+
         frame_win = tk.Toplevel(self.root)
+        self.current_frame_win = frame_win
         frame_win.overrideredirect(True)
         frame_win.attributes('-topmost', True)
 
@@ -199,7 +205,7 @@ class ScreenCaptureApp:
         toolbar.pack(fill="x", side="top")
 
         lbl_info = tk.Label(
-            toolbar, text=f" Moon s' Capture ({w} x {h} px)",
+            toolbar, text=f" Moon's Capture ({w} x {h} px)",
             bg="#1e293b", fg="white", font=("Segoe UI", 9, "bold")
         )
         lbl_info.pack(side="left", padx=10, pady=6)
@@ -210,8 +216,20 @@ class ScreenCaptureApp:
             cy = canvas.winfo_rooty()
             cw = canvas.winfo_width()
             ch = canvas.winfo_height()
-            frame_win.destroy()
-            self.root.after(180, lambda: self.process_capture(cx, cy, cx + cw, cy + ch))
+
+            # Temporarily hide frame for 120ms to avoid capturing its own red border/toolbar
+            frame_win.withdraw()
+
+            def capture_and_restore():
+                try:
+                    self.process_capture(cx, cy, cx + cw, cy + ch)
+                finally:
+                    # Restore frame window right after capture without closing
+                    if frame_win.winfo_exists():
+                        frame_win.deiconify()
+                        frame_win.lift()
+
+            self.root.after(120, capture_and_restore)
 
         btn_close = tk.Button(
             toolbar, text=" X ", bg="#ef4444", fg="white",
@@ -227,7 +245,7 @@ class ScreenCaptureApp:
         )
         btn_capture.pack(side="right", padx=4, pady=4)
 
-        # Toolbar Drag to Move Window
+        # Toolbar Drag Logic
         def start_move(event):
             frame_win.drag_start_x = event.x_root
             frame_win.drag_start_y = event.y_root
@@ -248,7 +266,6 @@ class ScreenCaptureApp:
         canvas = tk.Canvas(frame_win, width=w, height=h, bg=transparent_color, highlightthickness=0)
         canvas.pack(side="top")
 
-        # Red Border & Bottom-Right Resize Handle
         canvas.create_rectangle(1, 1, w - 2, h - 2, outline="#ef4444", width=2, tags="border")
         grip_size = 16
         canvas.create_rectangle(w - grip_size, h - grip_size, w - 1, h - 1, fill="#ef4444", outline="white", tags="grip")
@@ -271,7 +288,7 @@ class ScreenCaptureApp:
             canvas.coords("grip", new_w - grip_size, new_h - grip_size, new_w - 1, new_h - 1)
             canvas.coords("grip_text", new_w - 8, new_h - 8)
 
-            lbl_info.config(text=f" Moon s' Capture ({new_w} x {new_h} px)")
+            lbl_info.config(text=f" Moon's Capture ({new_w} x {new_h} px)")
             self.entry_w.delete(0, tk.END)
             self.entry_w.insert(0, str(new_w))
             self.entry_h.delete(0, tk.END)
@@ -330,7 +347,7 @@ class ScreenCaptureApp:
             self.entry_h.insert(0, str(y2 - y1))
 
             if x2 - x1 > 5 and y2 - y1 > 5:
-                self.root.after(180, lambda: self.process_capture(x1, y1, x2, y2))
+                self.root.after(120, lambda: self.process_capture(x1, y1, x2, y2))
             else:
                 self.root.deiconify()
 
@@ -365,9 +382,7 @@ class ScreenCaptureApp:
                 target_w = orig_w * 2
                 target_h = orig_h * 2
                 resample_filter = getattr(Image, 'Resampling', Image).LANCZOS
-                # 1. 2x Lanczos Interpolation
                 img = img.resize((target_w, target_h), resample_filter)
-                # 2. Detail & Edge Enhancer
                 img = img.filter(ImageFilter.UnsharpMask(radius=1.5, percent=140, threshold=2))
 
             self.last_captured_image = img
