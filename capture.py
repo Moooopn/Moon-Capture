@@ -4,9 +4,9 @@ import ctypes
 from ctypes import wintypes
 import tkinter as tk
 from tkinter import filedialog, messagebox
-from PIL import Image, ImageGrab
+from PIL import Image, ImageGrab, ImageFilter, ImageDraw
 
-# Enable DPI Awareness for accurate pixel matching on Windows
+# Enable Per-Monitor DPI Awareness for accurate pixel matching on Windows
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)
 except Exception:
@@ -16,12 +16,38 @@ except Exception:
         pass
 
 
+def create_moon_icon():
+    """Generates a high-quality full moon icon with crater details."""
+    size = 64
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # 1. Subtle Outer Glow
+    draw.ellipse((3, 3, 61, 61), fill=(255, 235, 150, 60))
+
+    # 2. Main Full Moon Body
+    draw.ellipse((4, 4, 60, 60), fill="#FDD835", outline="#FBC02D", width=2)
+
+    # 3. Soft Moon Craters & Surface Details
+    crater_color = "#F0C419"
+    draw.ellipse((14, 18, 26, 30), fill=crater_color)
+    draw.ellipse((34, 14, 44, 24), fill=crater_color)
+    draw.ellipse((30, 34, 46, 50), fill=crater_color)
+    draw.ellipse((18, 40, 27, 49), fill=crater_color)
+    draw.ellipse((44, 28, 52, 36), fill=crater_color)
+
+    # Convert to Tkinter-compatible PhotoImage using in-memory PNG buffer
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return tk.PhotoImage(data=buf.getvalue())
+
+
 def copy_to_clipboard(image):
     """Safely copies a PIL Image to Windows Clipboard (64-bit compatible DIB)."""
     try:
         output = io.BytesIO()
         image.convert("RGB").save(output, "BMP")
-        data = output.getvalue()[14:]  # Remove standard BMP header
+        data = output.getvalue()[14:]  # Remove standard BMP 14-byte header
         output.close()
 
         user32 = ctypes.windll.user32
@@ -73,19 +99,26 @@ def copy_to_clipboard(image):
 class ScreenCaptureApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Moon's Capture")
-        self.root.geometry("500x520")
-        self.root.minsize(460, 400)
+        self.root.title("Moon s' Capture")
+        self.root.geometry("520x540")
+        self.root.minsize(480, 500)
         self.root.resizable(True, True)
+
+        # Set Full Moon Icon for Titlebar & Taskbar
+        try:
+            self.moon_icon = create_moon_icon()
+            self.root.iconphoto(True, self.moon_icon)
+        except Exception as e:
+            print(f"Icon setup warning: {e}")
 
         self.last_captured_image = None
 
         # --- Section 1: Frame Settings ---
         lbl_frame = tk.LabelFrame(
             root, text=" 1. Moveable & Resizable Frame ",
-            font=("Segoe UI", 9, "bold"), padx=15, pady=10
+            font=("Segoe UI", 9, "bold"), padx=15, pady=8
         )
-        lbl_frame.pack(fill="x", padx=15, pady=8)
+        lbl_frame.pack(fill="x", padx=15, pady=6)
 
         input_frame = tk.Frame(lbl_frame)
         input_frame.pack(pady=4)
@@ -110,9 +143,9 @@ class ScreenCaptureApp:
         # --- Section 2: Free Drag Area ---
         lbl_drag = tk.LabelFrame(
             root, text=" 2. Drag & Select Area ",
-            font=("Segoe UI", 9, "bold"), padx=15, pady=10
+            font=("Segoe UI", 9, "bold"), padx=15, pady=8
         )
-        lbl_drag.pack(fill="x", padx=15, pady=5)
+        lbl_drag.pack(fill="x", padx=15, pady=6)
 
         self.btn_drag = tk.Button(
             lbl_drag, text="Drag to Select Area", font=("Segoe UI", 9),
@@ -123,17 +156,16 @@ class ScreenCaptureApp:
         # --- Section 3: Upscaling & Output Options ---
         lbl_output = tk.LabelFrame(
             root, text=" 3. Resolution & Save ",
-            font=("Segoe UI", 9, "bold"), padx=15, pady=10
+            font=("Segoe UI", 9, "bold"), padx=15, pady=8
         )
-        lbl_output.pack(fill="x", padx=15, pady=8)
+        lbl_output.pack(fill="x", padx=15, pady=6)
 
-        # 4K Upscale Toggle (Enabled by default)
         self.var_upscale = tk.BooleanVar(value=True)
         chk_upscale = tk.Checkbutton(
-            lbl_output, text="Upscale to 4K Quality (2x Resolution, Lanczos Filter)",
+            lbl_output, text="Upscale to 4K + Enhance Detail & Text Clarity",
             variable=self.var_upscale, font=("Segoe UI", 9, "bold"), fg="#1e40af"
         )
-        chk_upscale.pack(anchor="w", pady=(0, 6))
+        chk_upscale.pack(anchor="w", pady=(2, 6))
 
         self.lbl_status = tk.Label(lbl_output, text="Status: Ready", font=("Segoe UI", 9), fg="#4b5563")
         self.lbl_status.pack(anchor="w", pady=(0, 6))
@@ -141,9 +173,9 @@ class ScreenCaptureApp:
         self.btn_save = tk.Button(
             lbl_output, text="Save as PNG...", state="disabled",
             bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
-            relief="flat", pady=6, cursor="hand2", command=self.save_as_png
+            relief="flat", pady=7, cursor="hand2", command=self.save_as_png
         )
-        self.btn_save.pack(fill="x")
+        self.btn_save.pack(fill="x", pady=(2, 4))
 
     def open_moveable_frame(self):
         try:
@@ -167,7 +199,7 @@ class ScreenCaptureApp:
         toolbar.pack(fill="x", side="top")
 
         lbl_info = tk.Label(
-            toolbar, text=f" Move Toolbar ({w} x {h} px)",
+            toolbar, text=f" Moon s' Capture ({w} x {h} px)",
             bg="#1e293b", fg="white", font=("Segoe UI", 9, "bold")
         )
         lbl_info.pack(side="left", padx=10, pady=6)
@@ -222,7 +254,6 @@ class ScreenCaptureApp:
         canvas.create_rectangle(w - grip_size, h - grip_size, w - 1, h - 1, fill="#ef4444", outline="white", tags="grip")
         canvas.create_text(w - 8, h - 8, text="⇲", fill="white", font=("Segoe UI", 8, "bold"), tags="grip_text")
 
-        # Resize Handle Logic
         def start_resize(event):
             frame_win.resize_start_x = event.x_root
             frame_win.resize_start_y = event.y_root
@@ -235,14 +266,12 @@ class ScreenCaptureApp:
             new_w = max(80, frame_win.initial_w + dx)
             new_h = max(50, frame_win.initial_h + dy)
 
-            # Update Canvas Geometry
             canvas.config(width=new_w, height=new_h)
             canvas.coords("border", 1, 1, new_w - 2, new_h - 2)
             canvas.coords("grip", new_w - grip_size, new_h - grip_size, new_w - 1, new_h - 1)
             canvas.coords("grip_text", new_w - 8, new_h - 8)
 
-            # Update Labels & Input fields in Real Time
-            lbl_info.config(text=f" Move Toolbar ({new_w} x {new_h} px)")
+            lbl_info.config(text=f" Moon s' Capture ({new_w} x {new_h} px)")
             self.entry_w.delete(0, tk.END)
             self.entry_w.insert(0, str(new_w))
             self.entry_h.delete(0, tk.END)
@@ -295,7 +324,6 @@ class ScreenCaptureApp:
             x2 = max(state["start_x"], end_x)
             y2 = max(state["start_y"], end_y)
 
-            # Sync Dragged size back to input boxes
             self.entry_w.delete(0, tk.END)
             self.entry_w.insert(0, str(x2 - x1))
             self.entry_h.delete(0, tk.END)
@@ -331,13 +359,16 @@ class ScreenCaptureApp:
 
             orig_w, orig_h = img.size
 
-            # 4K Upscaling (FHD to 4K: 2x resolution with Lanczos Resampling)
+            # 4K Upscaling + Edge Clarification
             is_upscaled = self.var_upscale.get()
             if is_upscaled:
                 target_w = orig_w * 2
                 target_h = orig_h * 2
                 resample_filter = getattr(Image, 'Resampling', Image).LANCZOS
+                # 1. 2x Lanczos Interpolation
                 img = img.resize((target_w, target_h), resample_filter)
+                # 2. Detail & Edge Enhancer
+                img = img.filter(ImageFilter.UnsharpMask(radius=1.5, percent=140, threshold=2))
 
             self.last_captured_image = img
 
@@ -346,7 +377,7 @@ class ScreenCaptureApp:
 
             # 2. Update Status
             final_w, final_h = img.size
-            upscale_text = f" -> 4K {final_w}x{final_h} px" if is_upscaled else ""
+            upscale_text = f" -> 4K Enhanced {final_w}x{final_h} px" if is_upscaled else ""
             status_msg = f"Captured ({orig_w}x{orig_h}{upscale_text}) - "
             status_msg += "Copied to Clipboard!" if clipboard_ok else "Ready to save!"
 
