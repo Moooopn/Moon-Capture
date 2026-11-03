@@ -100,7 +100,7 @@ class ScreenCaptureApp:
         self.root = root
         self.root.title("Moon's Capture")
         self.root.geometry("520x500")
-        self.root.minsize(480, 500)
+        self.root.minsize(480, 480)
         self.root.resizable(True, True)
 
         self.current_frame_win = None
@@ -120,66 +120,66 @@ class ScreenCaptureApp:
         # --- Section 1: Frame Settings ---
         lbl_frame = tk.LabelFrame(
             root, text=" 1. Moveable & Resizable Frame ",
-            font=("Segoe UI", 9, "bold"), padx=15, pady=8
+            font=("Segoe UI", 9, "bold"), padx=15, pady=6
         )
-        lbl_frame.pack(fill="x", padx=15, pady=6)
+        lbl_frame.pack(fill="x", padx=15, pady=5)
 
         input_frame = tk.Frame(lbl_frame)
-        input_frame.pack(pady=4)
+        input_frame.pack(pady=3)
 
-        tk.Label(input_frame, text="Width (px):", font=("Segoe UI", 9)).grid(row=0, column=0, padx=6, pady=4, sticky="e")
+        tk.Label(input_frame, text="Width (px):", font=("Segoe UI", 9)).grid(row=0, column=0, padx=6, pady=3, sticky="e")
         self.entry_w = tk.Entry(input_frame, width=9, font=("Segoe UI", 9))
         self.entry_w.insert(0, "600")
-        self.entry_w.grid(row=0, column=1, padx=6, pady=4)
+        self.entry_w.grid(row=0, column=1, padx=6, pady=3)
 
-        tk.Label(input_frame, text="Height (px):", font=("Segoe UI", 9)).grid(row=0, column=2, padx=6, pady=4, sticky="e")
+        tk.Label(input_frame, text="Height (px):", font=("Segoe UI", 9)).grid(row=0, column=2, padx=6, pady=3, sticky="e")
         self.entry_h = tk.Entry(input_frame, width=9, font=("Segoe UI", 9))
         self.entry_h.insert(0, "400")
-        self.entry_h.grid(row=0, column=3, padx=6, pady=4)
+        self.entry_h.grid(row=0, column=3, padx=6, pady=3)
 
         self.btn_spawn_frame = tk.Button(
             lbl_frame, text="Create Moveable/Resizable Frame  [ 1 ]", bg="#2563eb", fg="white",
-            font=("Segoe UI", 9, "bold"), relief="flat", pady=6, cursor="hand2",
+            font=("Segoe UI", 9, "bold"), relief="flat", pady=5, cursor="hand2",
             command=self.open_moveable_frame
         )
-        self.btn_spawn_frame.pack(fill="x", pady=(8, 2))
+        self.btn_spawn_frame.pack(fill="x", pady=(6, 2))
 
         # --- Section 2: Free Drag Area ---
         lbl_drag = tk.LabelFrame(
             root, text=" 2. Drag & Select Area ",
-            font=("Segoe UI", 9, "bold"), padx=15, pady=8
+            font=("Segoe UI", 9, "bold"), padx=15, pady=6
         )
-        lbl_drag.pack(fill="x", padx=15, pady=6)
+        lbl_drag.pack(fill="x", padx=15, pady=5)
 
         self.btn_drag = tk.Button(
             lbl_drag, text="Drag to Select Area  [ 2 ]", font=("Segoe UI", 9),
-            relief="groove", pady=6, cursor="hand2", command=self.start_drag_capture
+            relief="groove", pady=5, cursor="hand2", command=self.start_drag_capture
         )
         self.btn_drag.pack(fill="x")
 
         # --- Section 3: Upscaling & Output Options ---
         lbl_output = tk.LabelFrame(
             root, text=" 3. Resolution & Save ",
-            font=("Segoe UI", 9, "bold"), padx=15, pady=8
+            font=("Segoe UI", 9, "bold"), padx=15, pady=6
         )
-        lbl_output.pack(fill="x", padx=15, pady=8)
+        lbl_output.pack(fill="x", padx=15, pady=5)
 
         self.var_upscale = tk.BooleanVar(value=True)
         chk_upscale = tk.Checkbutton(
             lbl_output, text="Upscale to 4K + Enhance Detail & Text Clarity",
             variable=self.var_upscale, font=("Segoe UI", 9, "bold"), fg="#1e40af"
         )
-        chk_upscale.pack(anchor="w", pady=(2, 6))
+        chk_upscale.pack(anchor="w", pady=(1, 4))
 
         self.lbl_status = tk.Label(lbl_output, text="Status: Ready  (Hotkeys: 1=Frame, 2=Drag, 3=Save)", font=("Segoe UI", 9), fg="#4b5563")
-        self.lbl_status.pack(anchor="w", pady=(0, 6))
+        self.lbl_status.pack(anchor="w", pady=(0, 4))
 
         self.btn_save = tk.Button(
             lbl_output, text="Save as PNG...  [ 3 ]", state="disabled",
             bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
-            relief="flat", pady=7, cursor="hand2", command=self.save_as_png
+            relief="flat", pady=6, cursor="hand2", command=self.save_as_png
         )
-        self.btn_save.pack(fill="x", pady=(2, 4))
+        self.btn_save.pack(fill="x", pady=(2, 2))
 
     def handle_hotkey(self, event):
         if isinstance(event.widget, tk.Entry):
@@ -221,7 +221,7 @@ class ScreenCaptureApp:
         toolbar.pack(fill="x", side="top")
 
         lbl_info = tk.Label(
-            toolbar, text=f" Moon's Capture ({w} x {h} px) - [Enter] to Capture",
+            toolbar, text=f" Moon's Capture ({w} x {h} px)",
             bg="#1e293b", fg="white", font=("Segoe UI", 9, "bold")
         )
         lbl_info.pack(side="left", padx=10, pady=6)
@@ -280,27 +280,14 @@ class ScreenCaptureApp:
         lbl_info.bind("<ButtonPress-1>", start_move)
         lbl_info.bind("<B1-Motion>", do_move)
 
-        # 2. Transparent Hollow Canvas
+        # 2. Transparent Hollow Canvas (Clean Single Border Only)
         canvas = tk.Canvas(frame_win, width=w, height=h, bg=transparent_color, highlightthickness=0)
         canvas.pack(side="top")
 
-        # Main Red Outline Border
+        # Single Red Border Rectangle without any dots or markings
         canvas.create_rectangle(1, 1, w - 2, h - 2, outline="#ef4444", width=2, tags="border")
 
-        # 4 Edge Lines (Thicker hit-area for horizontal & vertical resizing)
-        c_size = 12
-        canvas.create_line(c_size, 1, w - c_size, 1, width=4, fill="#ef4444", tags="edge_n")
-        canvas.create_line(c_size, h - 2, w - c_size, h - 2, width=4, fill="#ef4444", tags="edge_s")
-        canvas.create_line(1, c_size, 1, h - c_size, width=4, fill="#ef4444", tags="edge_w")
-        canvas.create_line(w - 2, c_size, w - 2, h - c_size, width=4, fill="#ef4444", tags="edge_e")
-
-        # 4 Corner Handles (Clean solid accents matching the red border)
-        canvas.create_rectangle(1, 1, c_size, c_size, fill="#ef4444", outline="#ef4444", tags="corner_nw")
-        canvas.create_rectangle(w - c_size, 1, w - 1, c_size, fill="#ef4444", outline="#ef4444", tags="corner_ne")
-        canvas.create_rectangle(1, h - c_size, c_size, h - 1, fill="#ef4444", outline="#ef4444", tags="corner_sw")
-        canvas.create_rectangle(w - c_size, h - c_size, w - 1, h - 1, fill="#ef4444", outline="#ef4444", tags="corner_se")
-
-        # Multi-Direction Resize Engine
+        # Multi-Direction Resizing via Border Coordinates
         drag_data = {
             "start_x": 0, "start_y": 0,
             "win_x": 0, "win_y": 0,
@@ -308,16 +295,58 @@ class ScreenCaptureApp:
             "mode": None
         }
 
-        def start_resize(mode, event):
-            drag_data["start_x"] = event.x_root
-            drag_data["start_y"] = event.y_root
-            drag_data["win_x"] = frame_win.winfo_x()
-            drag_data["win_y"] = frame_win.winfo_y()
-            drag_data["init_w"] = canvas.winfo_width()
-            drag_data["init_h"] = canvas.winfo_height()
-            drag_data["mode"] = mode
+        margin = 25  # Corner threshold in pixels
 
-        def do_resize(event):
+        def get_resize_info(x, y, cur_w, cur_h):
+            is_left = x <= margin
+            is_right = x >= cur_w - margin
+            is_top = y <= margin
+            is_bottom = y >= cur_h - margin
+
+            if is_top and is_left:
+                return "nw", "size_nw_se"
+            elif is_top and is_right:
+                return "ne", "size_ne_sw"
+            elif is_bottom and is_left:
+                return "sw", "size_ne_sw"
+            elif is_bottom and is_right:
+                return "se", "size_nw_se"
+            elif is_top:
+                return "n", "size_ns"
+            elif is_bottom:
+                return "s", "size_ns"
+            elif is_left:
+                return "w", "size_we"
+            elif is_right:
+                return "e", "size_we"
+            return None, ""
+
+        def on_border_motion(event):
+            if drag_data["mode"]:
+                return
+            cur_w = canvas.winfo_width()
+            cur_h = canvas.winfo_height()
+            mode, cursor = get_resize_info(event.x, event.y, cur_w, cur_h)
+            canvas.config(cursor=cursor if cursor else "")
+
+        def on_border_leave(event):
+            if not drag_data["mode"]:
+                canvas.config(cursor="")
+
+        def on_border_press(event):
+            cur_w = canvas.winfo_width()
+            cur_h = canvas.winfo_height()
+            mode, cursor = get_resize_info(event.x, event.y, cur_w, cur_h)
+            if mode:
+                drag_data["start_x"] = event.x_root
+                drag_data["start_y"] = event.y_root
+                drag_data["win_x"] = frame_win.winfo_x()
+                drag_data["win_y"] = frame_win.winfo_y()
+                drag_data["init_w"] = cur_w
+                drag_data["init_h"] = cur_h
+                drag_data["mode"] = mode
+
+        def on_border_drag(event):
             mode = drag_data["mode"]
             if not mode:
                 return
@@ -338,8 +367,7 @@ class ScreenCaptureApp:
             min_w = 80
             min_h = 50
 
-            # Horizontal sizing
-            if "w" in mode:  # nw, sw, w (Left side)
+            if "w" in mode:
                 raw_w = init_w - dx
                 if raw_w < min_w:
                     new_w = min_w
@@ -347,11 +375,10 @@ class ScreenCaptureApp:
                 else:
                     new_w = raw_w
                     new_x = init_x + dx
-            elif "e" in mode:  # ne, se, e (Right side)
+            elif "e" in mode:
                 new_w = max(min_w, init_w + dx)
 
-            # Vertical sizing
-            if "n" in mode:  # nw, ne, n (Top side)
+            if "n" in mode:
                 raw_h = init_h - dy
                 if raw_h < min_h:
                     new_h = min_h
@@ -359,10 +386,9 @@ class ScreenCaptureApp:
                 else:
                     new_h = raw_h
                     new_y = init_y + dy
-            elif "s" in mode:  # sw, se, s (Bottom side)
+            elif "s" in mode:
                 new_h = max(min_h, init_h + dy)
 
-            # Update Canvas Geometry
             canvas.config(width=new_w, height=new_h)
             toolbar.update_idletasks()
             tb_h = toolbar.winfo_height()
@@ -370,43 +396,25 @@ class ScreenCaptureApp:
                 tb_h = 36
             frame_win.geometry(f"{new_w}x{new_h + tb_h}+{new_x}+{new_y}")
 
-            # Update Border and Grip Coordinates
+            # Update border position
             canvas.coords("border", 1, 1, new_w - 2, new_h - 2)
 
-            canvas.coords("edge_n", c_size, 1, new_w - c_size, 1)
-            canvas.coords("edge_s", c_size, new_h - 2, new_w - c_size, new_h - 2)
-            canvas.coords("edge_w", 1, c_size, 1, new_h - c_size)
-            canvas.coords("edge_e", new_w - 2, c_size, new_w - 2, new_h - c_size)
-
-            canvas.coords("corner_nw", 1, 1, c_size, c_size)
-            canvas.coords("corner_ne", new_w - c_size, 1, new_w - 1, c_size)
-            canvas.coords("corner_sw", 1, new_h - c_size, c_size, new_h - 1)
-            canvas.coords("corner_se", new_w - c_size, new_h - c_size, new_w - 1, new_h - 1)
-
-            # Update Labels & Input fields in Real Time
-            lbl_info.config(text=f" Moon's Capture ({new_w} x {new_h} px) - [Enter] to Capture")
+            # Update label and entries
+            lbl_info.config(text=f" Moon's Capture ({new_w} x {new_h} px)")
             self.entry_w.delete(0, tk.END)
             self.entry_w.insert(0, str(new_w))
             self.entry_h.delete(0, tk.END)
             self.entry_h.insert(0, str(new_h))
 
-        # Bind all 8 handles (4 corners + 4 edges) with appropriate cursors
-        handles = [
-            ("corner_nw", "nw", "size_nw_se"),
-            ("corner_ne", "ne", "size_ne_sw"),
-            ("corner_sw", "sw", "size_ne_sw"),
-            ("corner_se", "se", "size_nw_se"),
-            ("edge_w", "w", "size_we"),
-            ("edge_e", "e", "size_we"),
-            ("edge_s", "s", "size_ns"),
-            ("edge_n", "n", "size_ns"),
-        ]
+        def on_border_release(event):
+            drag_data["mode"] = None
+            canvas.config(cursor="")
 
-        for tag, mode, cur in handles:
-            canvas.tag_bind(tag, "<ButtonPress-1>", lambda e, m=mode: start_resize(m, e))
-            canvas.tag_bind(tag, "<B1-Motion>", do_resize)
-            canvas.tag_bind(tag, "<Enter>", lambda e, c=cur: canvas.config(cursor=c))
-            canvas.tag_bind(tag, "<Leave>", lambda e: canvas.config(cursor=""))
+        canvas.tag_bind("border", "<Motion>", on_border_motion)
+        canvas.tag_bind("border", "<Leave>", on_border_leave)
+        canvas.tag_bind("border", "<ButtonPress-1>", on_border_press)
+        canvas.tag_bind("border", "<B1-Motion>", on_border_drag)
+        canvas.tag_bind("border", "<ButtonRelease-1>", on_border_release)
 
         # Center frame on screen
         frame_win.update_idletasks()
@@ -427,7 +435,16 @@ class ScreenCaptureApp:
         canvas = tk.Canvas(overlay, cursor="cross", bg="gray")
         canvas.pack(fill="both", expand=True)
 
+        # Force focus to capture ESC immediately
+        overlay.focus_force()
+        canvas.focus_set()
+
         state = {"start_x": 0, "start_y": 0, "rect": None}
+
+        def cancel_capture(event=None):
+            overlay.destroy()
+            self.root.deiconify()
+            self.lbl_status.config(text="Status: Selection cancelled.", fg="#4b5563")
 
         def on_press(event):
             state["start_x"] = event.x
@@ -462,7 +479,10 @@ class ScreenCaptureApp:
         canvas.bind("<ButtonPress-1>", on_press)
         canvas.bind("<B1-Motion>", on_drag)
         canvas.bind("<ButtonRelease-1>", on_release)
-        overlay.bind("<Escape>", lambda e: (overlay.destroy(), self.root.deiconify()))
+
+        # ESC cancel bindings on both overlay and canvas
+        overlay.bind("<Escape>", cancel_capture)
+        canvas.bind("<Escape>", cancel_capture)
 
     def process_capture(self, x1, y1, x2, y2):
         self.root.withdraw()
