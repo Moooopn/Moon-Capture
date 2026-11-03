@@ -541,8 +541,9 @@ class ScreenCaptureApp:
                 event.x, event.y, event.x, event.y,
                 outline="#ef4444", width=3, tags="drag_box"
             )
+            # Dimension badge (dark background + white text)
             state["dim_bg"] = canvas.create_rectangle(0, 0, 0, 0, fill="#1e293b", outline="#ef4444", width=1, tags="dim_tag")
-            state["dim_text"] = canvas.create_text(0, 0, text="", fill="white", font=("Segoe UI", 9, "bold"), tags="dim_tag")
+            state["dim_text"] = canvas.create_text(0, 0, text="", fill="white", font=("Segoe UI", 9, "bold"), anchor="nw", tags="dim_tag")
 
         def on_drag(event):
             if not state["is_dragging"]:
@@ -575,11 +576,24 @@ class ScreenCaptureApp:
 
             canvas.coords(state["rect"], x1, y1, x2, y2)
 
-            tag_y = y1 - 15 if y1 >= 30 else y2 + 15
-            tag_x = x1 + 50
+            # Auto-fitting Dimension Badge (dynamically calculates text bounds)
+            tag_text = f"{w} x {h} px"
+            tag_y = y1 - 24 if y1 >= 28 else y1 + 8
+            tag_x = max(10, x1 + 8)
+
+            canvas.itemconfig(state["dim_text"], text=tag_text)
             canvas.coords(state["dim_text"], tag_x, tag_y)
-            canvas.itemconfig(state["dim_text"], text=f" {w} x {h} px ")
-            canvas.coords(state["dim_bg"], tag_x - 45, tag_y - 10, tag_x + 45, tag_y + 10)
+
+            # Calculate actual text bounding box and resize background rectangle with padding
+            bbox = canvas.bbox(state["dim_text"])
+            if bbox:
+                pad_x = 8
+                pad_y = 3
+                canvas.coords(state["dim_bg"], bbox[0] - pad_x, bbox[1] - pad_y, bbox[2] + pad_x, bbox[3] + pad_y)
+
+            # Ensure tags always float above selection area
+            canvas.tag_raise(state["dim_bg"])
+            canvas.tag_raise(state["dim_text"])
 
             self.entry_w.delete(0, tk.END)
             self.entry_w.insert(0, str(w))
