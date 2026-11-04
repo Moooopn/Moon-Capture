@@ -21,7 +21,7 @@ jobs:
     - name: Install dependencies & UPX
       run: |
         python -m pip install --upgrade pip
-        pip install Pillow pyinstaller
+        pip install Pillow pyinstaller pystray
         choco install upx -y
 
     - name: Generate Moon Icon File
@@ -46,6 +46,7 @@ jobs:
           "-w",
           "-F",
           "--icon=moon.ico",
+          "--hidden-import=pystray._win32",
           "-n", "Moon's Capture",
           "--exclude-module", "unittest",
           "--exclude-module", "email",
