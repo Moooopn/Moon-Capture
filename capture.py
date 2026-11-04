@@ -457,26 +457,25 @@ class ScreenCaptureApp:
         entry_fh.pack(side="left", padx=(2, 4))
 
         def exit_frame(event=None):
-            # Save last position and dimensions when closing
             self.last_frame_box = (box["x1"], box["y1"], box["x2"] - box["x1"], box["y2"] - box["y1"])
             frame_win.destroy()
             self.lbl_status.config(text="Status: Ready", fg="#4b5563")
 
         def do_capture():
-            # Save last position and dimensions on capture
+            # Save position & dimensions before closing
             self.last_frame_box = (box["x1"], box["y1"], box["x2"] - box["x1"], box["y2"] - box["y1"])
+            # Hide and destroy frame window immediately upon capture
             frame_win.withdraw()
             frame_win.update_idletasks()
 
-            def capture_and_restore():
+            def capture_and_close():
                 try:
                     self.process_capture(box["x1"], box["y1"], box["x2"], box["y2"], v_left, v_top)
                 finally:
                     if frame_win.winfo_exists():
-                        frame_win.deiconify()
-                        frame_win.lift()
+                        frame_win.destroy()
 
-            self.root.after(30, capture_and_restore)
+            self.root.after(30, capture_and_close)
 
         def apply_direct_pixels(event=None):
             try:
