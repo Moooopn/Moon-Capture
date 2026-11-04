@@ -147,6 +147,9 @@ class ScreenCaptureApp:
         self.is_running = True
         self.tray_icon = None
 
+        # Remembers the last frame box position & size: (x1, y1, w, h)
+        self.last_frame_box = None
+
         try:
             self.moon_icon = create_moon_icon()
             self.root.iconphoto(True, self.moon_icon)
@@ -242,17 +245,16 @@ class ScreenCaptureApp:
         )
         btn_quit.pack(side="right", expand=True, fill="x", padx=(4, 0))
 
-        # 1. Start Global Hotkey Listener Thread
+        # Global Hotkey Thread
         self.hotkey_thread = threading.Thread(target=self._global_hotkey_listener, daemon=True)
         self.hotkey_thread.start()
 
-        # 2. Start System Tray Icon Thread
+        # System Tray Thread
         if pystray:
             self.tray_thread = threading.Thread(target=self._init_tray_icon, daemon=True)
             self.tray_thread.start()
 
     def _init_tray_icon(self):
-        """Initializes system tray icon with context menu and double-click action."""
         try:
             tray_img = create_moon_pil_image()
             menu = pystray.Menu(
@@ -292,7 +294,6 @@ class ScreenCaptureApp:
     def handle_local_hotkey(self, event):
         if isinstance(event.widget, tk.Entry):
             return
-
         if event.char == "1" or event.keysym in ("1", "KP_1"):
             self.open_moveable_frame()
         elif event.char == "2" or event.keysym in ("2", "KP_2"):
@@ -300,8 +301,6 @@ class ScreenCaptureApp:
         elif event.char == "3" or event.keysym in ("3", "KP_3"):
             if self.btn_save["state"] == "normal":
                 self.save_as_png()
-            else:
-                self.lbl_status.config(text="Status: Please capture an image first before saving!", fg="#d97706")
 
     def _global_hotkey_listener(self):
         user32 = ctypes.windll.user32
@@ -367,19 +366,48 @@ class ScreenCaptureApp:
         return full_screen, photo, (v_left, v_top, v_width, v_height)
 
     def open_moveable_frame(self):
-        try:
-            w = int(self.entry_w.get().strip())
-            h = int(self.entry_h.get().strip())
-            if w <= 40 or h <= 40:
-                raise ValueError
-        except ValueError:
-            w, h = 600, 400
-
         self.root.withdraw()
         self.root.update_idletasks()
 
         full_screen, self.blur_photo, (v_left, v_top, v_width, v_height) = self.capture_screen_and_blur()
         fw, fh = full_screen.size
+
+        # Determine frame position & size (Restore last position if available)
+        if self.last_frame_box:
+            last_x1, last_y1, last_w, last_h = self.last_frame_box
+            w = last_w
+            h = last_h
+            init_x1 = max(10, min(v_width - w - 10, last_x1))
+            init_y1 = max(45, min(v_height - h - 10, last_y1))
+            init_x2 = init_x1 + w
+            init_y2 = init_y1 + h
+        else:
+            try:
+                w = int(self.entry_w.get().strip())
+                h = int(self.entry_h.get().strip())
+                if w <= 40 or h <= 40:
+                    raise ValueError
+            except ValueError:
+                w, h = 600, 400
+
+            cur_mx, cur_my = get_cursor_pos()
+            mouse_cx = cur_mx - v_left
+            mouse_cy = cur_my - v_top
+
+            init_x1 = mouse_cx - w // 2
+            init_y1 = mouse_cy - h // 2
+            init_x1 = max(10, min(v_width - w - 10, init_x1))
+            init_y1 = max(45, min(v_height - h - 10, init_y1))
+            init_x2 = init_x1 + w
+            init_y2 = init_y1 + h
+
+        # Sync input fields in main UI
+        self.entry_w.delete(0, tk.END)
+        self.entry_w.insert(0, str(w))
+        self.entry_h.delete(0, tk.END)
+        self.entry_h.insert(0, str(h))
+
+        box = {"x1": init_x1, "y1": init_y1, "x2": init_x2, "y2": init_y2}
 
         if self.current_frame_win and self.current_frame_win.winfo_exists():
             self.current_frame_win.destroy()
@@ -394,19 +422,6 @@ class ScreenCaptureApp:
         canvas.pack(fill="both", expand=True)
 
         canvas.create_image(0, 0, image=self.blur_photo, anchor="nw")
-
-        cur_mx, cur_my = get_cursor_pos()
-        mouse_cx = cur_mx - v_left
-        mouse_cy = cur_my - v_top
-
-        init_x1 = mouse_cx - w // 2
-        init_y1 = mouse_cy - h // 2
-        init_x1 = max(10, min(v_width - w - 10, init_x1))
-        init_y1 = max(45, min(v_height - h - 10, init_y1))
-        init_x2 = init_x1 + w
-        init_y2 = init_y1 + h
-
-        box = {"x1": init_x1, "y1": init_y1, "x2": init_x2, "y2": init_y2}
 
         crop_init = full_screen.crop((init_x1, init_y1, init_x2, init_y2))
         if ImageTk:
@@ -427,17 +442,29 @@ class ScreenCaptureApp:
         )
 
         toolbar = tk.Frame(frame_win, bg="#1e293b")
-        lbl_info = tk.Label(
-            toolbar, text=f" Moon's Capture ({w} x {h} px)",
-            bg="#1e293b", fg="white", font=("Segoe UI", 9, "bold")
-        )
-        lbl_info.pack(side="left", padx=10, pady=6)
+
+        lbl_title = tk.Label(toolbar, text=" Moon's ", bg="#1e293b", fg="#FDD835", font=("Segoe UI", 9, "bold"))
+        lbl_title.pack(side="left", padx=(6, 2), pady=4)
+
+        tk.Label(toolbar, text="W:", bg="#1e293b", fg="white", font=("Segoe UI", 8)).pack(side="left")
+        entry_fw = tk.Entry(toolbar, width=5, font=("Segoe UI", 8), justify="center")
+        entry_fw.insert(0, str(w))
+        entry_fw.pack(side="left", padx=(2, 4))
+
+        tk.Label(toolbar, text="H:", bg="#1e293b", fg="white", font=("Segoe UI", 8)).pack(side="left")
+        entry_fh = tk.Entry(toolbar, width=5, font=("Segoe UI", 8), justify="center")
+        entry_fh.insert(0, str(h))
+        entry_fh.pack(side="left", padx=(2, 4))
 
         def exit_frame(event=None):
+            # Save last position and dimensions when closing
+            self.last_frame_box = (box["x1"], box["y1"], box["x2"] - box["x1"], box["y2"] - box["y1"])
             frame_win.destroy()
             self.lbl_status.config(text="Status: Ready", fg="#4b5563")
 
         def do_capture():
+            # Save last position and dimensions on capture
+            self.last_frame_box = (box["x1"], box["y1"], box["x2"] - box["x1"], box["y2"] - box["y1"])
             frame_win.withdraw()
             frame_win.update_idletasks()
 
@@ -451,6 +478,35 @@ class ScreenCaptureApp:
 
             self.root.after(30, capture_and_restore)
 
+        def apply_direct_pixels(event=None):
+            try:
+                nw = int(entry_fw.get().strip())
+                nh = int(entry_fh.get().strip())
+                if nw < 40 or nh < 30:
+                    return
+                box["x2"] = box["x1"] + nw
+                box["y2"] = box["y1"] + nh
+                update_frame_visuals()
+
+                self.last_frame_box = (box["x1"], box["y1"], nw, nh)
+                self.entry_w.delete(0, tk.END)
+                self.entry_w.insert(0, str(nw))
+                self.entry_h.delete(0, tk.END)
+                self.entry_h.insert(0, str(nh))
+                canvas.focus_set()
+            except ValueError:
+                pass
+
+        btn_set = tk.Button(
+            toolbar, text="Set", bg="#3b82f6", fg="white",
+            relief="flat", font=("Segoe UI", 8, "bold"), padx=6, pady=1,
+            cursor="hand2", command=apply_direct_pixels
+        )
+        btn_set.pack(side="left", padx=(2, 6))
+
+        entry_fw.bind("<Return>", apply_direct_pixels)
+        entry_fh.bind("<Return>", apply_direct_pixels)
+
         btn_close = tk.Button(
             toolbar, text=" X ", bg="#ef4444", fg="white",
             relief="flat", font=("Segoe UI", 9, "bold"), padx=8, pady=2,
@@ -460,7 +516,7 @@ class ScreenCaptureApp:
 
         btn_capture = tk.Button(
             toolbar, text=" Capture ", bg="#10b981", fg="white",
-            relief="flat", font=("Segoe UI", 9, "bold"), padx=12, pady=2,
+            relief="flat", font=("Segoe UI", 9, "bold"), padx=10, pady=2,
             cursor="hand2", command=do_capture
         )
         btn_capture.pack(side="right", padx=4, pady=4)
@@ -470,7 +526,7 @@ class ScreenCaptureApp:
         def update_toolbar_pos():
             cur_w = box["x2"] - box["x1"]
             outer_w = cur_w + border_width
-            actual_w = max(260, outer_w)
+            actual_w = max(350, outer_w)
             pos_x = max(0, min(v_width - actual_w, box["x1"] - half_bw))
             pos_y = (box["y1"] - tb_height - half_bw) if (box["y1"] - tb_height - half_bw >= 0) else (box["y2"] + half_bw)
             toolbar.place(x=pos_x, y=pos_y, width=actual_w, height=tb_height)
@@ -500,8 +556,14 @@ class ScreenCaptureApp:
         frame_win.focus_force()
         canvas.focus_set()
         frame_win.bind_all("<Escape>", exit_frame)
-        frame_win.bind("<Return>", lambda e: do_capture())
-        frame_win.bind("<space>", lambda e: do_capture())
+
+        def handle_frame_keypress(event):
+            focused = frame_win.focus_get()
+            if focused not in (entry_fw, entry_fh):
+                if event.keysym in ("Return", "space"):
+                    do_capture()
+
+        frame_win.bind("<Key>", handle_frame_keypress)
 
         drag_data = {
             "mode": None, "start_x": 0, "start_y": 0,
@@ -570,6 +632,7 @@ class ScreenCaptureApp:
                 box["y1"] = init_y1 + dy
                 box["x2"] = box["x1"] + cur_w
                 box["y2"] = box["y1"] + cur_h
+                self.last_frame_box = (box["x1"], box["y1"], cur_w, cur_h)
                 update_frame_visuals()
                 return
 
@@ -588,11 +651,17 @@ class ScreenCaptureApp:
                 new_y2 = max(init_y1 + min_h, init_y2 + dy)
 
             box["x1"], box["y1"], box["x2"], box["y2"] = new_x1, new_y1, new_x2, new_y2
-            update_frame_visuals()
-
             cur_w = new_x2 - new_x1
             cur_h = new_y2 - new_y1
-            lbl_info.config(text=f" Moon's Capture ({cur_w} x {cur_h} px)")
+            self.last_frame_box = (box["x1"], box["y1"], cur_w, cur_h)
+            update_frame_visuals()
+
+            if frame_win.focus_get() not in (entry_fw, entry_fh):
+                entry_fw.delete(0, tk.END)
+                entry_fw.insert(0, str(cur_w))
+                entry_fh.delete(0, tk.END)
+                entry_fh.insert(0, str(cur_h))
+
             self.entry_w.delete(0, tk.END); self.entry_w.insert(0, str(cur_w))
             self.entry_h.delete(0, tk.END); self.entry_h.insert(0, str(cur_h))
 
@@ -618,9 +687,9 @@ class ScreenCaptureApp:
         toolbar.bind("<ButtonPress-1>", start_toolbar_move)
         toolbar.bind("<B1-Motion>", on_canvas_drag)
         toolbar.bind("<ButtonRelease-1>", on_canvas_release)
-        lbl_info.bind("<ButtonPress-1>", start_toolbar_move)
-        lbl_info.bind("<B1-Motion>", on_canvas_drag)
-        lbl_info.bind("<ButtonRelease-1>", on_canvas_release)
+        lbl_title.bind("<ButtonPress-1>", start_toolbar_move)
+        lbl_title.bind("<B1-Motion>", on_canvas_drag)
+        lbl_title.bind("<ButtonRelease-1>", on_canvas_release)
 
     def start_drag_capture(self):
         self.root.withdraw()
