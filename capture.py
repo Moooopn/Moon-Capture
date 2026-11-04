@@ -13,7 +13,7 @@ try:
 except ImportError:
     ImageTk = None
 
-# Enable Per-Monitor DPI Awareness for accurate pixel matching on Windows
+# Enable Per-Monitor DPI Awareness for accurate physical pixel matching on Windows
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)
 except Exception:
@@ -21,6 +21,31 @@ except Exception:
         ctypes.windll.user32.SetProcessDPIAware()
     except Exception:
         pass
+
+
+class POINT(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+
+def get_cursor_pos():
+    """Returns current mouse cursor position in Windows Virtual Screen coordinates."""
+    pt = POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+    return pt.x, pt.y
+
+
+def get_virtual_screen_geometry():
+    """Gets bounding rectangle across ALL active monitors (Virtual Desktop)."""
+    user32 = ctypes.windll.user32
+    v_left = user32.GetSystemMetrics(76)   # SM_XVIRTUALSCREEN
+    v_top = user32.GetSystemMetrics(77)    # SM_YVIRTUALSCREEN
+    v_width = user32.GetSystemMetrics(78)  # SM_CXVIRTUALSCREEN
+    v_height = user32.GetSystemMetrics(79) # SM_CYVIRTUALSCREEN
+    if v_width <= 0:
+        v_width = user32.GetSystemMetrics(0)
+    if v_height <= 0:
+        v_height = user32.GetSystemMetrics(1)
+    return v_left, v_top, v_width, v_height
 
 
 def create_moon_icon():
@@ -111,7 +136,6 @@ class ScreenCaptureApp:
         self.inside_photo = None
         self.is_running = True
 
-        # Moon Icon
         try:
             self.moon_icon = create_moon_icon()
             self.root.iconphoto(True, self.moon_icon)
@@ -120,10 +144,7 @@ class ScreenCaptureApp:
 
         self.last_captured_image = None
 
-        # Handle window close (X) -> Hide to background instead of quitting
         self.root.protocol("WM_DELETE_WINDOW", self.hide_to_background)
-
-        # Local Hotkeys (active when main window has focus)
         self.root.bind("<Key>", self.handle_local_hotkey)
 
         # --- Section 1: Frame Settings ---
@@ -215,11 +236,9 @@ class ScreenCaptureApp:
         self.hotkey_thread.start()
 
     def hide_to_background(self):
-        """Hides the main window to run persistently in the background."""
         self.root.withdraw()
 
     def toggle_main_window(self):
-        """Toggles the visibility of the main window."""
         if self.root.winfo_viewable():
             self.root.withdraw()
         else:
@@ -228,7 +247,6 @@ class ScreenCaptureApp:
             self.root.focus_force()
 
     def quit_app(self):
-        """Fully exits the application."""
         self.is_running = False
         self.root.destroy()
 
@@ -247,12 +265,10 @@ class ScreenCaptureApp:
                 self.lbl_status.config(text="Status: Please capture an image first before saving!", fg="#d97706")
 
     def _global_hotkey_listener(self):
-        """Registers Windows OS-level global hotkeys using Win32 API."""
         user32 = ctypes.windll.user32
         MOD_ALT = 0x0001
         MOD_NOREPEAT = 0x4000
 
-        # Virtual Key Codes: '1'=0x31, '2'=0x32, '3'=0x33, '0'=0x30
         user32.RegisterHotKey(None, 1, MOD_ALT | MOD_NOREPEAT, 0x31)  # Alt + 1
         user32.RegisterHotKey(None, 2, MOD_ALT | MOD_NOREPEAT, 0x32)  # Alt + 2
         user32.RegisterHotKey(None, 3, MOD_ALT | MOD_NOREPEAT, 0x33)  # Alt + 3
@@ -261,7 +277,7 @@ class ScreenCaptureApp:
         msg = wintypes.MSG()
         while self.is_running:
             if user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
-                if msg.message == 0x0312:  # WM_HOTKEY
+                if msg.message == 0x0312:
                     hk_id = msg.wParam
                     if hk_id == 1:
                         self.root.after(0, self.open_moveable_frame)
@@ -274,7 +290,6 @@ class ScreenCaptureApp:
                 user32.TranslateMessage(ctypes.byref(msg))
                 user32.DispatchMessageW(ctypes.byref(msg))
 
-        # Cleanup
         for i in (1, 2, 3, 4):
             user32.UnregisterHotKey(None, i)
 
@@ -287,12 +302,16 @@ class ScreenCaptureApp:
             self.lbl_status.config(text="Status: Please capture an image first before saving (Alt+3)!", fg="#d97706")
 
     def capture_screen_and_blur(self):
+        """Captures the entire virtual desktop spanning all monitors."""
+        v_left, v_top, v_width, v_height = get_virtual_screen_geometry()
         try:
             full_screen = ImageGrab.grab(all_screens=True)
         except Exception:
             full_screen = ImageGrab.grab()
 
         fw, fh = full_screen.size
+        v_width, v_height = fw, fh
+
         small_w = max(1, fw // 2)
         small_h = max(1, fh // 2)
         small_img = full_screen.resize((small_w, small_h), Image.Resampling.BILINEAR)
@@ -307,7 +326,7 @@ class ScreenCaptureApp:
             blurred_full.save(buf, format="PNG")
             photo = tk.PhotoImage(data=buf.getvalue())
 
-        return full_screen, photo
+        return full_screen, photo, (v_left, v_top, v_width, v_height)
 
     def open_moveable_frame(self):
         try:
@@ -321,7 +340,7 @@ class ScreenCaptureApp:
         self.root.withdraw()
         self.root.update_idletasks()
 
-        full_screen, self.blur_photo = self.capture_screen_and_blur()
+        full_screen, self.blur_photo, (v_left, v_top, v_width, v_height) = self.capture_screen_and_blur()
         fw, fh = full_screen.size
 
         if self.current_frame_win and self.current_frame_win.winfo_exists():
@@ -329,23 +348,32 @@ class ScreenCaptureApp:
 
         frame_win = tk.Toplevel(self.root)
         self.current_frame_win = frame_win
-        frame_win.attributes('-fullscreen', True)
+        frame_win.overrideredirect(True)
+        # Spans the entire virtual desktop across all monitors
+        frame_win.geometry(f"{v_width}x{v_height}+{v_left}+{v_top}")
         frame_win.attributes('-topmost', True)
 
-        canvas = tk.Canvas(frame_win, highlightthickness=0, bg="black")
+        canvas = tk.Canvas(frame_win, highlightthickness=0, bg="black", width=v_width, height=v_height)
         canvas.pack(fill="both", expand=True)
 
+        # 1. Base Frosted Background across ALL monitors
         canvas.create_image(0, 0, image=self.blur_photo, anchor="nw")
 
-        screen_w = frame_win.winfo_screenwidth()
-        screen_h = frame_win.winfo_screenheight()
-        init_x1 = max(40, (screen_w - w) // 2)
-        init_y1 = max(50, (screen_h - h) // 2)
+        # 2. Position frame centered on current mouse cursor position
+        cur_mx, cur_my = get_cursor_pos()
+        mouse_cx = cur_mx - v_left
+        mouse_cy = cur_my - v_top
+
+        init_x1 = mouse_cx - w // 2
+        init_y1 = mouse_cy - h // 2
+        init_x1 = max(10, min(v_width - w - 10, init_x1))
+        init_y1 = max(45, min(v_height - h - 10, init_y1))
         init_x2 = init_x1 + w
         init_y2 = init_y1 + h
 
         box = {"x1": init_x1, "y1": init_y1, "x2": init_x2, "y2": init_y2}
 
+        # 3. Crystal Clear Inside Image Item
         crop_init = full_screen.crop((init_x1, init_y1, init_x2, init_y2))
         if ImageTk:
             self.inside_photo = ImageTk.PhotoImage(crop_init)
@@ -356,6 +384,7 @@ class ScreenCaptureApp:
 
         canvas.create_image(init_x1, init_y1, image=self.inside_photo, anchor="nw", tags="inside_img")
 
+        # 4. Red Border
         border_width = 4
         half_bw = border_width // 2
 
@@ -381,7 +410,7 @@ class ScreenCaptureApp:
 
             def capture_and_restore():
                 try:
-                    self.process_capture(box["x1"], box["y1"], box["x2"], box["y2"])
+                    self.process_capture(box["x1"], box["y1"], box["x2"], box["y2"], v_left, v_top)
                 finally:
                     if frame_win.winfo_exists():
                         frame_win.deiconify()
@@ -409,7 +438,7 @@ class ScreenCaptureApp:
             cur_w = box["x2"] - box["x1"]
             outer_w = cur_w + border_width
             actual_w = max(260, outer_w)
-            pos_x = box["x1"] - half_bw
+            pos_x = max(0, min(v_width - actual_w, box["x1"] - half_bw))
             pos_y = (box["y1"] - tb_height - half_bw) if (box["y1"] - tb_height - half_bw >= 0) else (box["y2"] + half_bw)
             toolbar.place(x=pos_x, y=pos_y, width=actual_w, height=tb_height)
 
@@ -434,6 +463,7 @@ class ScreenCaptureApp:
 
         update_toolbar_pos()
 
+        frame_win.lift()
         frame_win.focus_force()
         canvas.focus_set()
         frame_win.bind_all("<Escape>", exit_frame)
@@ -563,14 +593,16 @@ class ScreenCaptureApp:
         self.root.withdraw()
         self.root.update_idletasks()
 
-        full_screen, self.blur_photo = self.capture_screen_and_blur()
+        full_screen, self.blur_photo, (v_left, v_top, v_width, v_height) = self.capture_screen_and_blur()
         fw, fh = full_screen.size
 
         overlay = tk.Toplevel(self.root)
-        overlay.attributes('-fullscreen', True)
+        overlay.overrideredirect(True)
+        # Spans across all monitors
+        overlay.geometry(f"{v_width}x{v_height}+{v_left}+{v_top}")
         overlay.attributes('-topmost', True)
 
-        canvas = tk.Canvas(overlay, highlightthickness=0, bg="black", cursor="cross")
+        canvas = tk.Canvas(overlay, highlightthickness=0, bg="black", cursor="cross", width=v_width, height=v_height)
         canvas.pack(fill="both", expand=True)
 
         canvas.create_image(0, 0, image=self.blur_photo, anchor="nw")
@@ -650,7 +682,7 @@ class ScreenCaptureApp:
 
             tag_text = f"{w} x {h} px"
             tag_y = y1 - 24 if y1 >= 28 else y1 + 8
-            tag_x = max(10, x1 + 8)
+            tag_x = max(10, min(v_width - 120, x1 + 8))
 
             canvas.itemconfig(state["dim_text"], text=tag_text)
             canvas.coords(state["dim_text"], tag_x, tag_y)
@@ -661,6 +693,7 @@ class ScreenCaptureApp:
                 pad_y = 3
                 canvas.coords(state["dim_bg"], bbox[0] - pad_x, bbox[1] - pad_y, bbox[2] + pad_x, bbox[3] + pad_y)
 
+            canvas.tag_raise(state["rect"])
             canvas.tag_raise(state["dim_bg"])
             canvas.tag_raise(state["dim_text"])
 
@@ -687,7 +720,7 @@ class ScreenCaptureApp:
             y2 = max(state["start_y"], end_y)
 
             if x2 - x1 > 5 and y2 - y1 > 5:
-                self.root.after(30, lambda: self.process_capture(x1, y1, x2, y2))
+                self.root.after(30, lambda: self.process_capture(x1, y1, x2, y2, v_left, v_top))
             else:
                 pass
 
@@ -696,23 +729,36 @@ class ScreenCaptureApp:
         canvas.bind("<ButtonRelease-1>", on_release)
         overlay.bind_all("<ButtonRelease-1>", on_release)
 
-    def process_capture(self, x1, y1, x2, y2):
+    def process_capture(self, cx1, cy1, cx2, cy2, v_left=0, v_top=0):
         self.root.withdraw()
         self.root.update_idletasks()
 
         try:
-            x1_i = int(round(min(x1, x2)))
-            y1_i = int(round(min(y1, y2)))
-            x2_i = int(round(max(x1, x2)))
-            y2_i = int(round(max(y1, y2)))
+            cx1_i = int(round(min(cx1, cx2)))
+            cy1_i = int(round(min(cy1, cy2)))
+            cx2_i = int(round(max(cx1, cx2)))
+            cy2_i = int(round(max(cy1, cy2)))
 
-            if x2_i <= x1_i or y2_i <= y1_i:
+            if cx2_i <= cx1_i or cy2_i <= cy1_i:
                 return
 
+            sx1 = cx1_i + v_left
+            sy1 = cy1_i + v_top
+            sx2 = cx2_i + v_left
+            sy2 = cy2_i + v_top
+
+            time.sleep(0.04)
+
             try:
-                img = ImageGrab.grab(bbox=(x1_i, y1_i, x2_i, y2_i), all_screens=True)
+                img = ImageGrab.grab(bbox=(sx1, sy1, sx2, sy2), all_screens=True)
+                req_w = cx2_i - cx1_i
+                req_h = cy2_i - cy1_i
+                if abs(img.width - req_w) > 4 or abs(img.height - req_h) > 4:
+                    full = ImageGrab.grab(all_screens=True)
+                    img = full.crop((cx1_i, cy1_i, cx2_i, cy2_i))
             except Exception:
-                img = ImageGrab.grab(bbox=(x1_i, y1_i, x2_i, y2_i))
+                full = ImageGrab.grab(all_screens=True)
+                img = full.crop((cx1_i, cy1_i, cx2_i, cy2_i))
 
             orig_w, orig_h = img.size
 
