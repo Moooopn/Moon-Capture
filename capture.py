@@ -13,6 +13,12 @@ try:
 except ImportError:
     ImageTk = None
 
+# System Tray integration library
+try:
+    import pystray
+except ImportError:
+    pystray = None
+
 # Enable Per-Monitor DPI Awareness for accurate physical pixel matching on Windows
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)
@@ -48,8 +54,8 @@ def get_virtual_screen_geometry():
     return v_left, v_top, v_width, v_height
 
 
-def create_moon_icon():
-    """Generates a high-quality full moon icon with crater details."""
+def create_moon_pil_image():
+    """Generates the PIL full moon image for window icon and system tray."""
     size = 64
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -63,7 +69,11 @@ def create_moon_icon():
     draw.ellipse((30, 34, 46, 50), fill=crater_color)
     draw.ellipse((18, 40, 27, 49), fill=crater_color)
     draw.ellipse((44, 28, 52, 36), fill=crater_color)
+    return img
 
+
+def create_moon_icon():
+    img = create_moon_pil_image()
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return tk.PhotoImage(data=buf.getvalue())
@@ -135,6 +145,7 @@ class ScreenCaptureApp:
         self.blur_photo = None
         self.inside_photo = None
         self.is_running = True
+        self.tray_icon = None
 
         try:
             self.moon_icon = create_moon_icon()
@@ -220,7 +231,7 @@ class ScreenCaptureApp:
         lbl_resident.pack(fill="x", padx=15, pady=(8, 4))
 
         btn_hide = tk.Button(
-            lbl_resident, text="Hide to Background", font=("Segoe UI", 8),
+            lbl_resident, text="Hide to Tray", font=("Segoe UI", 8),
             relief="groove", pady=3, cursor="hand2", command=self.hide_to_background
         )
         btn_hide.pack(side="left", expand=True, fill="x", padx=(0, 4))
@@ -231,9 +242,31 @@ class ScreenCaptureApp:
         )
         btn_quit.pack(side="right", expand=True, fill="x", padx=(4, 0))
 
-        # Start Global Hotkey Listener Thread
+        # 1. Start Global Hotkey Listener Thread
         self.hotkey_thread = threading.Thread(target=self._global_hotkey_listener, daemon=True)
         self.hotkey_thread.start()
+
+        # 2. Start System Tray Icon Thread
+        if pystray:
+            self.tray_thread = threading.Thread(target=self._init_tray_icon, daemon=True)
+            self.tray_thread.start()
+
+    def _init_tray_icon(self):
+        """Initializes system tray icon with context menu and double-click action."""
+        try:
+            tray_img = create_moon_pil_image()
+            menu = pystray.Menu(
+                pystray.MenuItem("Show / Hide  (Alt+0)", lambda icon, item: self.root.after(0, self.toggle_main_window), default=True),
+                pystray.MenuItem("Moveable Frame  (Alt+1)", lambda icon, item: self.root.after(0, self.open_moveable_frame)),
+                pystray.MenuItem("Drag Select  (Alt+2)", lambda icon, item: self.root.after(0, self.start_drag_capture)),
+                pystray.MenuItem("Save as PNG  (Alt+3)", lambda icon, item: self.root.after(0, self.hotkey_save_png)),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("Quit", lambda icon, item: self.root.after(0, self.quit_app))
+            )
+            self.tray_icon = pystray.Icon("Moon's Capture", tray_img, "Moon's Capture", menu=menu)
+            self.tray_icon.run()
+        except Exception as e:
+            print(f"Tray error: {e}")
 
     def hide_to_background(self):
         self.root.withdraw()
@@ -248,6 +281,12 @@ class ScreenCaptureApp:
 
     def quit_app(self):
         self.is_running = False
+        if self.tray_icon:
+            try:
+                self.tray_icon.stop()
+            except Exception:
+                pass
+        self.root.quit()
         self.root.destroy()
 
     def handle_local_hotkey(self, event):
@@ -302,7 +341,6 @@ class ScreenCaptureApp:
             self.lbl_status.config(text="Status: Please capture an image first before saving (Alt+3)!", fg="#d97706")
 
     def capture_screen_and_blur(self):
-        """Captures the entire virtual desktop spanning all monitors."""
         v_left, v_top, v_width, v_height = get_virtual_screen_geometry()
         try:
             full_screen = ImageGrab.grab(all_screens=True)
@@ -349,17 +387,14 @@ class ScreenCaptureApp:
         frame_win = tk.Toplevel(self.root)
         self.current_frame_win = frame_win
         frame_win.overrideredirect(True)
-        # Spans the entire virtual desktop across all monitors
         frame_win.geometry(f"{v_width}x{v_height}+{v_left}+{v_top}")
         frame_win.attributes('-topmost', True)
 
         canvas = tk.Canvas(frame_win, highlightthickness=0, bg="black", width=v_width, height=v_height)
         canvas.pack(fill="both", expand=True)
 
-        # 1. Base Frosted Background across ALL monitors
         canvas.create_image(0, 0, image=self.blur_photo, anchor="nw")
 
-        # 2. Position frame centered on current mouse cursor position
         cur_mx, cur_my = get_cursor_pos()
         mouse_cx = cur_mx - v_left
         mouse_cy = cur_my - v_top
@@ -373,7 +408,6 @@ class ScreenCaptureApp:
 
         box = {"x1": init_x1, "y1": init_y1, "x2": init_x2, "y2": init_y2}
 
-        # 3. Crystal Clear Inside Image Item
         crop_init = full_screen.crop((init_x1, init_y1, init_x2, init_y2))
         if ImageTk:
             self.inside_photo = ImageTk.PhotoImage(crop_init)
@@ -384,7 +418,6 @@ class ScreenCaptureApp:
 
         canvas.create_image(init_x1, init_y1, image=self.inside_photo, anchor="nw", tags="inside_img")
 
-        # 4. Red Border
         border_width = 4
         half_bw = border_width // 2
 
@@ -598,7 +631,6 @@ class ScreenCaptureApp:
 
         overlay = tk.Toplevel(self.root)
         overlay.overrideredirect(True)
-        # Spans across all monitors
         overlay.geometry(f"{v_width}x{v_height}+{v_left}+{v_top}")
         overlay.attributes('-topmost', True)
 
