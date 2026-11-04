@@ -2,6 +2,7 @@ import io
 import time
 import ctypes
 from ctypes import wintypes
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageGrab, ImageFilter, ImageDraw, ImageEnhance
@@ -28,13 +29,9 @@ def create_moon_icon():
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    # 1. Subtle Outer Glow
     draw.ellipse((3, 3, 61, 61), fill=(255, 235, 150, 60))
-
-    # 2. Main Full Moon Body
     draw.ellipse((4, 4, 60, 60), fill="#FDD835", outline="#FBC02D", width=2)
 
-    # 3. Soft Moon Craters & Surface Details
     crater_color = "#F0C419"
     draw.ellipse((14, 18, 26, 30), fill=crater_color)
     draw.ellipse((34, 14, 44, 24), fill=crater_color)
@@ -52,7 +49,7 @@ def copy_to_clipboard(image):
     try:
         output = io.BytesIO()
         image.convert("RGB").save(output, "BMP")
-        data = output.getvalue()[14:]  # Remove standard BMP 14-byte header
+        data = output.getvalue()[14:]
         output.close()
 
         user32 = ctypes.windll.user32
@@ -86,13 +83,13 @@ def copy_to_clipboard(image):
 
         try:
             user32.EmptyClipboard()
-            h_mem = kernel32.GlobalAlloc(0x0002, len(data))  # GMEM_MOVEABLE
+            h_mem = kernel32.GlobalAlloc(0x0002, len(data))
             if h_mem:
                 p_mem = kernel32.GlobalLock(h_mem)
                 if p_mem:
                     ctypes.memmove(p_mem, data, len(data))
                     kernel32.GlobalUnlock(h_mem)
-                    user32.SetClipboardData(8, h_mem)  # CF_DIB
+                    user32.SetClipboardData(8, h_mem)
                     return True
         finally:
             user32.CloseClipboard()
@@ -105,15 +102,16 @@ class ScreenCaptureApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Moon's Capture")
-        self.root.geometry("520x500")
-        self.root.minsize(480, 480)
+        self.root.geometry("520x550")
+        self.root.minsize(480, 520)
         self.root.resizable(True, True)
 
         self.current_frame_win = None
         self.blur_photo = None
         self.inside_photo = None
+        self.is_running = True
 
-        # Set Moon Icon
+        # Moon Icon
         try:
             self.moon_icon = create_moon_icon()
             self.root.iconphoto(True, self.moon_icon)
@@ -122,8 +120,11 @@ class ScreenCaptureApp:
 
         self.last_captured_image = None
 
-        # Bind Global Hotkeys (1, 2, 3)
-        self.root.bind("<Key>", self.handle_hotkey)
+        # Handle window close (X) -> Hide to background instead of quitting
+        self.root.protocol("WM_DELETE_WINDOW", self.hide_to_background)
+
+        # Local Hotkeys (active when main window has focus)
+        self.root.bind("<Key>", self.handle_local_hotkey)
 
         # --- Section 1: Frame Settings ---
         lbl_frame = tk.LabelFrame(
@@ -146,7 +147,7 @@ class ScreenCaptureApp:
         self.entry_h.grid(row=0, column=3, padx=6, pady=3)
 
         self.btn_spawn_frame = tk.Button(
-            lbl_frame, text="Create Moveable/Resizable Frame", bg="#2563eb", fg="white",
+            lbl_frame, text="Create Moveable/Resizable Frame  (Alt + 1)", bg="#2563eb", fg="white",
             font=("Segoe UI", 9, "bold"), relief="flat", pady=5, cursor="hand2",
             command=self.open_moveable_frame
         )
@@ -160,7 +161,7 @@ class ScreenCaptureApp:
         lbl_drag.pack(fill="x", padx=15, pady=5)
 
         self.btn_drag = tk.Button(
-            lbl_drag, text="Drag to Select Area", font=("Segoe UI", 9),
+            lbl_drag, text="Drag to Select Area  (Alt + 2)", font=("Segoe UI", 9),
             relief="groove", pady=5, cursor="hand2", command=self.start_drag_capture
         )
         self.btn_drag.pack(fill="x")
@@ -179,17 +180,59 @@ class ScreenCaptureApp:
         )
         chk_upscale.pack(anchor="w", pady=(1, 4))
 
-        self.lbl_status = tk.Label(lbl_output, text="Status: Ready", font=("Segoe UI", 9), fg="#4b5563")
+        self.lbl_status = tk.Label(
+            lbl_output,
+            text="Global Hotkeys: Alt+1 (Frame), Alt+2 (Drag), Alt+3 (Save), Alt+0 (Show/Hide)",
+            font=("Segoe UI", 8), fg="#4b5563"
+        )
         self.lbl_status.pack(anchor="w", pady=(0, 4))
 
         self.btn_save = tk.Button(
-            lbl_output, text="Save as PNG...", state="disabled",
+            lbl_output, text="Save as PNG...  (Alt + 3)", state="disabled",
             bg="#059669", fg="white", font=("Segoe UI", 9, "bold"),
             relief="flat", pady=6, cursor="hand2", command=self.save_as_png
         )
         self.btn_save.pack(fill="x", pady=(2, 2))
 
-    def handle_hotkey(self, event):
+        # --- Section 4: Resident Controls ---
+        lbl_resident = tk.Frame(root)
+        lbl_resident.pack(fill="x", padx=15, pady=(8, 4))
+
+        btn_hide = tk.Button(
+            lbl_resident, text="Hide to Background", font=("Segoe UI", 8),
+            relief="groove", pady=3, cursor="hand2", command=self.hide_to_background
+        )
+        btn_hide.pack(side="left", expand=True, fill="x", padx=(0, 4))
+
+        btn_quit = tk.Button(
+            lbl_resident, text="Quit Application", font=("Segoe UI", 8),
+            fg="#dc2626", relief="groove", pady=3, cursor="hand2", command=self.quit_app
+        )
+        btn_quit.pack(side="right", expand=True, fill="x", padx=(4, 0))
+
+        # Start Global Hotkey Listener Thread
+        self.hotkey_thread = threading.Thread(target=self._global_hotkey_listener, daemon=True)
+        self.hotkey_thread.start()
+
+    def hide_to_background(self):
+        """Hides the main window to run persistently in the background."""
+        self.root.withdraw()
+
+    def toggle_main_window(self):
+        """Toggles the visibility of the main window."""
+        if self.root.winfo_viewable():
+            self.root.withdraw()
+        else:
+            self.root.deiconify()
+            self.root.lift()
+            self.root.focus_force()
+
+    def quit_app(self):
+        """Fully exits the application."""
+        self.is_running = False
+        self.root.destroy()
+
+    def handle_local_hotkey(self, event):
         if isinstance(event.widget, tk.Entry):
             return
 
@@ -203,8 +246,47 @@ class ScreenCaptureApp:
             else:
                 self.lbl_status.config(text="Status: Please capture an image first before saving!", fg="#d97706")
 
+    def _global_hotkey_listener(self):
+        """Registers Windows OS-level global hotkeys using Win32 API."""
+        user32 = ctypes.windll.user32
+        MOD_ALT = 0x0001
+        MOD_NOREPEAT = 0x4000
+
+        # Virtual Key Codes: '1'=0x31, '2'=0x32, '3'=0x33, '0'=0x30
+        user32.RegisterHotKey(None, 1, MOD_ALT | MOD_NOREPEAT, 0x31)  # Alt + 1
+        user32.RegisterHotKey(None, 2, MOD_ALT | MOD_NOREPEAT, 0x32)  # Alt + 2
+        user32.RegisterHotKey(None, 3, MOD_ALT | MOD_NOREPEAT, 0x33)  # Alt + 3
+        user32.RegisterHotKey(None, 4, MOD_ALT | MOD_NOREPEAT, 0x30)  # Alt + 0
+
+        msg = wintypes.MSG()
+        while self.is_running:
+            if user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+                if msg.message == 0x0312:  # WM_HOTKEY
+                    hk_id = msg.wParam
+                    if hk_id == 1:
+                        self.root.after(0, self.open_moveable_frame)
+                    elif hk_id == 2:
+                        self.root.after(0, self.start_drag_capture)
+                    elif hk_id == 3:
+                        self.root.after(0, self.hotkey_save_png)
+                    elif hk_id == 4:
+                        self.root.after(0, self.toggle_main_window)
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageW(ctypes.byref(msg))
+
+        # Cleanup
+        for i in (1, 2, 3, 4):
+            user32.UnregisterHotKey(None, i)
+
+    def hotkey_save_png(self):
+        if self.btn_save["state"] == "normal":
+            self.save_as_png()
+        else:
+            self.root.deiconify()
+            self.root.lift()
+            self.lbl_status.config(text="Status: Please capture an image first before saving (Alt+3)!", fg="#d97706")
+
     def capture_screen_and_blur(self):
-        """Captures full screen and prepares frosted background."""
         try:
             full_screen = ImageGrab.grab(all_screens=True)
         except Exception:
@@ -234,8 +316,7 @@ class ScreenCaptureApp:
             if w <= 40 or h <= 40:
                 raise ValueError
         except ValueError:
-            messagebox.showerror("Invalid Input", "Please enter positive numbers greater than 40.")
-            return
+            w, h = 600, 400
 
         self.root.withdraw()
         self.root.update_idletasks()
@@ -254,10 +335,8 @@ class ScreenCaptureApp:
         canvas = tk.Canvas(frame_win, highlightthickness=0, bg="black")
         canvas.pack(fill="both", expand=True)
 
-        # 1. Base Frosted Background Image
         canvas.create_image(0, 0, image=self.blur_photo, anchor="nw")
 
-        # Initial coordinates
         screen_w = frame_win.winfo_screenwidth()
         screen_h = frame_win.winfo_screenheight()
         init_x1 = max(40, (screen_w - w) // 2)
@@ -267,7 +346,6 @@ class ScreenCaptureApp:
 
         box = {"x1": init_x1, "y1": init_y1, "x2": init_x2, "y2": init_y2}
 
-        # 2. Crystal Clear Inside Image Item
         crop_init = full_screen.crop((init_x1, init_y1, init_x2, init_y2))
         if ImageTk:
             self.inside_photo = ImageTk.PhotoImage(crop_init)
@@ -278,9 +356,8 @@ class ScreenCaptureApp:
 
         canvas.create_image(init_x1, init_y1, image=self.inside_photo, anchor="nw", tags="inside_img")
 
-        # 3. Red Border (Width: 4px)
         border_width = 4
-        half_bw = border_width // 2  # 2px outline offset
+        half_bw = border_width // 2
 
         canvas.create_rectangle(
             box["x1"], box["y1"], box["x2"], box["y2"],
@@ -296,7 +373,6 @@ class ScreenCaptureApp:
 
         def exit_frame(event=None):
             frame_win.destroy()
-            self.root.deiconify()
             self.lbl_status.config(text="Status: Ready", fg="#4b5563")
 
         def do_capture():
@@ -329,7 +405,6 @@ class ScreenCaptureApp:
 
         tb_height = 36
 
-        # Perfectly match toolbar width and X position with the outer red line
         def update_toolbar_pos():
             cur_w = box["x2"] - box["x1"]
             outer_w = cur_w + border_width
@@ -342,7 +417,6 @@ class ScreenCaptureApp:
             canvas.coords("frame_box", box["x1"], box["y1"], box["x2"], box["y2"])
             update_toolbar_pos()
 
-            # Refresh clear inside view
             cx1 = max(0, min(fw, box["x1"]))
             cy1 = max(0, min(fh, box["y1"]))
             cx2 = max(0, min(fw, box["x2"]))
@@ -360,14 +434,12 @@ class ScreenCaptureApp:
 
         update_toolbar_pos()
 
-        # Keyboard shortcuts
         frame_win.focus_force()
         canvas.focus_set()
         frame_win.bind_all("<Escape>", exit_frame)
         frame_win.bind("<Return>", lambda e: do_capture())
         frame_win.bind("<space>", lambda e: do_capture())
 
-        # Move/Resize unified engine
         drag_data = {
             "mode": None, "start_x": 0, "start_y": 0,
             "init_x1": 0, "init_y1": 0, "init_x2": 0, "init_y2": 0,
@@ -380,19 +452,16 @@ class ScreenCaptureApp:
         def get_mouse_action(x, y):
             x1, y1, x2, y2 = box["x1"], box["y1"], box["x2"], box["y2"]
 
-            # 1. Check Corners (Resize)
             if (abs(x - x1) <= corner_threshold) and (abs(y - y1) <= corner_threshold): return "resize_nw", "size_nw_se"
             if (abs(x - x2) <= corner_threshold) and (abs(y - y1) <= corner_threshold): return "resize_ne", "size_ne_sw"
             if (abs(x - x1) <= corner_threshold) and (abs(y - y2) <= corner_threshold): return "resize_sw", "size_ne_sw"
             if (abs(x - x2) <= corner_threshold) and (abs(y - y2) <= corner_threshold): return "resize_se", "size_nw_se"
 
-            # 2. Check Edges (Resize)
             if abs(y - y1) <= margin and (x1 - margin <= x <= x2 + margin): return "resize_n", "size_ns"
             if abs(y - y2) <= margin and (x1 - margin <= x <= x2 + margin): return "resize_s", "size_ns"
             if abs(x - x1) <= margin and (y1 - margin <= y <= y2 + margin): return "resize_w", "size_we"
             if abs(x - x2) <= margin and (y1 - margin <= y <= y2 + margin): return "resize_e", "size_we"
 
-            # 3. Inside Frame Body (Move)
             if x1 < x < x2 and y1 < y < y2:
                 return "move", "fleur"
 
@@ -431,7 +500,6 @@ class ScreenCaptureApp:
             init_x2 = drag_data["init_x2"]
             init_y2 = drag_data["init_y2"]
 
-            # Inside Frame Drag -> Move Frame
             if mode == "move":
                 cur_w = init_x2 - init_x1
                 cur_h = init_y2 - init_y1
@@ -442,7 +510,6 @@ class ScreenCaptureApp:
                 update_frame_visuals()
                 return
 
-            # Edge/Corner Drag -> Resize Frame
             min_w, min_h = 60, 40
             new_x1, new_x2 = init_x1, init_x2
             new_y1, new_y2 = init_y1, init_y2
@@ -476,7 +543,6 @@ class ScreenCaptureApp:
         canvas.bind("<B1-Motion>", on_canvas_drag)
         canvas.bind("<ButtonRelease-1>", on_canvas_release)
 
-        # Toolbar Drag Logic (Also moves the frame)
         def start_toolbar_move(event):
             drag_data["mode"] = "move"
             drag_data["start_x"] = event.x_root
@@ -522,7 +588,6 @@ class ScreenCaptureApp:
             except Exception:
                 pass
             overlay.destroy()
-            self.root.deiconify()
             self.lbl_status.config(text="Status: Selection cancelled.", fg="#4b5563")
 
         def set_focus_and_grab():
@@ -549,7 +614,6 @@ class ScreenCaptureApp:
                 event.x, event.y, event.x, event.y,
                 outline="#ef4444", width=3, tags="drag_box"
             )
-            # Dimension badge
             state["dim_bg"] = canvas.create_rectangle(0, 0, 0, 0, fill="#1e293b", outline="#ef4444", width=1, tags="dim_tag")
             state["dim_text"] = canvas.create_text(0, 0, text="", fill="white", font=("Segoe UI", 9, "bold"), anchor="nw", tags="dim_tag")
 
@@ -625,7 +689,7 @@ class ScreenCaptureApp:
             if x2 - x1 > 5 and y2 - y1 > 5:
                 self.root.after(30, lambda: self.process_capture(x1, y1, x2, y2))
             else:
-                self.root.deiconify()
+                pass
 
         canvas.bind("<ButtonPress-1>", on_press)
         canvas.bind("<B1-Motion>", on_drag)
@@ -666,14 +730,12 @@ class ScreenCaptureApp:
             final_w, final_h = img.size
             upscale_text = f" -> 4K Enhanced {final_w}x{final_h} px" if is_upscaled else ""
             status_msg = f"Captured ({orig_w}x{orig_h}{upscale_text}) - "
-            status_msg += "Copied to Clipboard!" if clipboard_ok else "Ready to save!"
+            status_msg += "Copied to Clipboard! (Press Alt+3 to Save)" if clipboard_ok else "Ready to save! (Press Alt+3)"
 
             self.lbl_status.config(text=status_msg, fg="#16a34a" if clipboard_ok else "#d97706")
             self.btn_save.config(state="normal")
         except Exception as e:
             messagebox.showerror("Capture Error", f"Failed to capture screen:\n{str(e)}")
-        finally:
-            self.root.deiconify()
 
     def save_as_png(self):
         if not self.last_captured_image:
